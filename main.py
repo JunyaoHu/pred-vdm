@@ -214,7 +214,7 @@ class DataModuleFromConfig(pl.LightningDataModule):
         shuffle = not is_iterable_dataset
 
         return DataLoader(self.datasets["train"], 
-                          batch_size=self.batch_size,
+                          batch_size=self.batch_size.train,
                           num_workers=self.num_workers, 
                           worker_init_fn=init_fn,
                           shuffle=shuffle,
@@ -228,8 +228,11 @@ class DataModuleFromConfig(pl.LightningDataModule):
         else:
             init_fn = None
 
+        # do not shuffle dataloader for iterable dataset
+        # shuffle = not is_iterable_dataset
+
         return DataLoader(self.datasets["validation"],
-                          batch_size=self.batch_size,
+                          batch_size=self.batch_size.validation,
                           num_workers=self.num_workers,
                           worker_init_fn=init_fn,
                           shuffle=shuffle,
@@ -244,28 +247,28 @@ class DataModuleFromConfig(pl.LightningDataModule):
             init_fn = None
 
         # do not shuffle dataloader for iterable dataset
-        shuffle = shuffle and (not is_iterable_dataset)
+        # shuffle = shuffle and (not is_iterable_dataset)
 
         return DataLoader(self.datasets["test"], 
-                          batch_size=self.batch_size,
+                          batch_size=self.batch_size.test,
                           num_workers=self.num_workers, 
                           worker_init_fn=init_fn, 
                           shuffle=shuffle,
                           persistent_workers=True
                           )
 
-    def _predict_dataloader(self, shuffle=False):
-        is_iterable_dataset = isinstance(self.datasets['predict'], Txt2ImgIterableBaseDataset)
-        if is_iterable_dataset or self.use_worker_init_fn:
-            init_fn = worker_init_fn
-        else:
-            init_fn = None
-        return DataLoader(self.datasets["predict"], 
-                          batch_size=self.batch_size,
-                          num_workers=self.num_workers, 
-                          worker_init_fn=init_fn,
-                          persistent_workers=True
-                          )
+    # def _predict_dataloader(self, shuffle=False):
+    #     is_iterable_dataset = isinstance(self.datasets['predict'], Txt2ImgIterableBaseDataset)
+    #     if is_iterable_dataset or self.use_worker_init_fn:
+    #         init_fn = worker_init_fn
+    #     else:
+    #         init_fn = None
+    #     return DataLoader(self.datasets["predict"], 
+    #                       batch_size=self.batch_size.predict,
+    #                       num_workers=self.num_workers, 
+    #                       worker_init_fn=init_fn,
+    #                       persistent_workers=True
+    #                       )
 
 
 class SetupCallback(Callback):
@@ -803,7 +806,7 @@ if __name__ == "__main__":
             print(f"{k:10}\t{data.datasets[k].__class__.__name__:10}\t{len(data.datasets[k])}")
 
         # configure learning rate
-        bs, base_lr = config.data.params.batch_size, config.model.base_learning_rate
+        bs, base_lr = config.data.params.batch_size.train, config.model.base_learning_rate
         if not cpu:
             ngpu = len(lightning_config.trainer.gpus.strip(",").split(','))
         else:
@@ -853,10 +856,9 @@ if __name__ == "__main__":
                 # melk()
                 raise
         if not opt.no_test and not trainer.interrupted:
-            trainer.test(model, data)
+            # trainer.test(model, data)
             # trainer.validate(model, data)
-            print("hello.")
-
+            pass
     except Exception:
         # if opt.debug and trainer.global_rank == 0:
         #     try:

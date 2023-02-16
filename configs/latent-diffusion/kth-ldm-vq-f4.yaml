@@ -68,7 +68,10 @@ model:
 data:
   target: main.DataModuleFromConfig
   params:
-    batch_size: 64
+    batch_size: 
+      train: 64
+      validation: 64
+      test: 64
     num_workers: 4
     wrap: false
     train:
@@ -93,7 +96,7 @@ lightning:
       target: main.VideoLogger
       params:
         # we do videologger (save local, and upload wandb) when batch_id/global step % [batch_frequency] == 0
-        batch_frequency: 2    
+        batch_frequency: 2000
         max_videos: 8
         increase_log_steps: False 
 
@@ -101,4 +104,6 @@ lightning:
     benchmark: True
     # accumulate_grad_batches: 2
     # Stop training after training step up to [max_steps]. Disabled by default (-1), it will go on forever until interrupted
-    max_steps: 4           
+    max_steps: 200000
+    # for log/log_dict(which on_step=True) log frequency by default (50)
+    log_every_n_steps: 50

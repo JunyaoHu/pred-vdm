@@ -24,7 +24,7 @@ class ConcatDatasetWithIndex(ConcatDataset):
 
 
 class VideoPaths(Dataset):
-    def __init__(self, paths=None, start_idxs=None, end_idxs=None, trans=None, labels=None):
+    def __init__(self, paths, start_idxs, end_idxs, trans=None, labels=None):
         self._length = len(paths)
         self._trans = trans
 
@@ -34,31 +34,18 @@ class VideoPaths(Dataset):
             self.labels = labels
 
         self.labels["file_path"] = paths
-
-        
-        if start_idxs is not None and end_idxs is not None:
-            self.given_start_and_end = True
-            self.labels["start_idx"] = start_idxs
-            self.labels["end_idx"] = end_idxs
-        else:
-            self.given_start_and_end = False
+        self.labels["start_idx"] = start_idxs
+        self.labels["end_idx"] = end_idxs
 
     def __len__(self):
         return self._length
 
-    def preprocess_video(self, video_path, start_idx=None, end_idx=None):
-        if start_idx is not None and end_idx is not None:
-            video = media.read_video(video_path)[start_idx:start_idx+50]
-        else:
-            video = media.read_video(video_path)[:50]
+    def preprocess_video(self, video_path, start_idx, end_idx):
+        video = media.read_video(video_path)[start_idx:end_idx]
         video = np.array(video).astype(np.uint8)
-        
         tmp_video = []
-
-        # select true frame idxs what we want
         for i in range(len(video)):
             tmp_video.append(self._trans(image=video[i])["image"])
-
         video = np.array(tmp_video)
         video = (video/127.5 - 1.0).astype(np.float32)
         # [0,255] -> [-1,1]
@@ -66,10 +53,7 @@ class VideoPaths(Dataset):
 
     def __getitem__(self, i):
         video = dict()
-        if self.given_start_and_end:
-            video["video"] = self.preprocess_video(self.labels["file_path"][i], int(self.labels["start_idx"][i]), int(self.labels["end_idx"][i]))
-        else:
-            video["video"] = self.preprocess_video(self.labels["file_path"][i])
+        video["video"] = self.preprocess_video(self.labels["file_path"][i], int(self.labels["start_idx"][i]), int(self.labels["end_idx"][i]))
         for k in self.labels:
             video[k] = self.labels[k][i]
         return video

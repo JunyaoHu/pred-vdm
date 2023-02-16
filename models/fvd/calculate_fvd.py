@@ -77,7 +77,7 @@ def calculate_fvd1(videos1, videos2, device):
 
 def main():
     NUMBER_OF_VIDEOS = 8
-    VIDEO_LENGTH = 30
+    VIDEO_LENGTH = 10
     CHANNEL = 3
     SIZE = 64
     CALCULATE_PER_FRAME = 5
@@ -86,9 +86,11 @@ def main():
     videos2 = torch.ones(NUMBER_OF_VIDEOS, VIDEO_LENGTH, CHANNEL, SIZE, SIZE, requires_grad=False)
     device = torch.device("cuda")
 
-    import json
-    result = calculate_fvd(videos1, videos2, CALCULATE_PER_FRAME, CALCULATE_FINAL, device)
-    print(json.dumps(result, indent=4))
+    # import json
+    # result = calculate_fvd(videos1, videos2, CALCULATE_PER_FRAME, CALCULATE_FINAL, device)
+    # print(json.dumps(result, indent=4))
+
+    print(calculate_fvd1(videos1,videos2,device))
 
 if __name__ == "__main__":
     main()

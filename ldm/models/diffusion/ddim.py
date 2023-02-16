@@ -6,7 +6,7 @@ from tqdm import tqdm
 from functools import partial
 
 from ldm.modules.diffusionmodules.util import make_ddim_sampling_parameters, make_ddim_timesteps, noise_like
-
+from pytorch_lightning.utilities import rank_zero_info
 
 class DDIMSampler(object):
     def __init__(self, model, schedule="linear", **kwargs):
@@ -164,6 +164,7 @@ class DDIMSampler(object):
             if img_callback: img_callback(pred_x0, i)
 
             if index % log_every_t == 0 or index == total_steps - 1:
+                rank_zero_info(f"fast_denoising (DDIM) {i}, {log_every_t}")
                 intermediates['x_inter'].append(img)
                 intermediates['pred_x0'].append(pred_x0)
 
