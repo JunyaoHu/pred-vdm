@@ -1,0 +1,104 @@
+model:
+  base_learning_rate: 2.0e-06
+  target: ldm.models.diffusion.ddpm.LatentDiffusion
+  params:
+    linear_start: 0.0015
+    linear_end: 0.0195
+    num_timesteps_cond: 1
+    log_every_t: 200 # log_every_timestep
+    timesteps: 1000
+    first_stage_key: video
+    image_size: 16
+    channels: 3
+    frame_num:
+      total: 50
+      cond: 10
+      pred: 5
+    monitor: val/loss_pixel_ema
+
+    unet_config:
+      target: ldm.modules.diffusionmodules.openaimodel.UNetModel
+      params:
+        dims: 2
+        image_size: 16
+        in_channels: 45
+        out_channels: 45
+        model_channels: 224
+        attention_resolutions:
+        # note: this isn\t actually the resolution but
+        # the downsampling factor, i.e. this corresnponds to
+        # attention on spatial resolution 8,16,32, as the
+        # spatial reolution of the latents is 64 for f4
+        - 8
+        - 4
+        - 2
+        num_res_blocks: 2
+        channel_mult:
+        - 1
+        - 2
+        - 3
+        - 4
+        num_head_channels: 32
+    
+    first_stage_config:
+      target: ldm.models.autoencoder.VQModelInterface
+      params:
+        embed_dim: 3
+        n_embed: 8192
+        ckpt_path: models/first_stage_models/vq-f4/model.ckpt
+        ddconfig:
+          double_z: false
+          z_channels: 3
+          resolution: 64
+          in_channels: 3
+          out_ch: 3
+          ch: 128
+          ch_mult:
+          - 1
+          - 2
+          - 4
+          num_res_blocks: 2
+          attn_resolutions: []
+          dropout: 0.0
+        lossconfig:
+          target: torch.nn.Identity
+    
+    cond_stage_config: __is_unconditional__
+
+data:
+  target: main.DataModuleFromConfig
+  params:
+    batch_size: 64
+    num_workers: 4
+    wrap: false
+    train:
+      target: taming.data.mydataset.KTH
+      params:
+        type: train
+        size: 64
+    validation:
+      target: taming.data.mydataset.KTH
+      params:
+        type: valid
+        size: 64
+    test:
+      target: taming.data.mydataset.KTH
+      params:
+        type: test
+        size: 64
+
+lightning:
+  callbacks:
+    video_logger:
+      target: main.VideoLogger
+      params:
+        # we do videologger (save local, and upload wandb) when batch_id/global step % [batch_frequency] == 0
+        batch_frequency: 2    
+        max_videos: 8
+        increase_log_steps: False 
+
+  trainer:
+    benchmark: True
+    # accumulate_grad_batches: 2
+    # Stop training after training step up to [max_steps]. Disabled by default (-1), it will go on forever until interrupted
+    max_steps: 4           
