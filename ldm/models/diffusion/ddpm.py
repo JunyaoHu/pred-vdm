@@ -1331,8 +1331,8 @@ class LatentDiffusion(DDPM):
             # [metrics for video] only validation step -------------------------------------------------
 
             if not self.training:
-                videos1 = torch.clamp((x_pixel+1)/.5,0,1)
-                videos2 = torch.clamp((target_pixel+1)/.5,0,1)
+                videos1 = torch.clamp((x_pixel+1)/2,0,1)
+                videos2 = torch.clamp((target_pixel+1)/2,0,1)
 
                 if videos1.shape[1] >= 10: 
                     fvd = calculate_fvd1(videos1, videos2, self.device)
