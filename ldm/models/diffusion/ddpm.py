@@ -1153,7 +1153,7 @@ class LatentDiffusion(DDPM):
                 # rank_zero_info(f"    predict: [{start_idx}:{end_idx}]")
 
                 x_cond      = x_result[:, -self.frame_num.cond*self.channels:]
-                x_pred_init = (torch.rand(x_pred.shape[0], self.frame_num.pred*self.channels, self.image_size, self.image_size)*2-1).to(self.device)
+                x_pred_init = (torch.rand(x_pred.shape[0], self.frame_num.pred*self.channels, self.image_size, self.image_size)*5-10).to(self.device)
                 x_input     = torch.cat([x_cond, x_pred_init], dim=1)
                 tmp_noise   = default(noise, lambda: torch.randn_like(x_input)).to(self.device)
                 # rank_zero_info("    q_sample")
@@ -1175,7 +1175,7 @@ class LatentDiffusion(DDPM):
 
             # loss_latent ------------------------------------------------
             
-            target = x_noise
+            target = x_pred
 
             # print(f"x_result_pred.shape, {x_result_pred.shape}")
             # print(f"target.shape       , {target.shape}")
@@ -1185,7 +1185,7 @@ class LatentDiffusion(DDPM):
             loss_dict = {}
             prefix = 'train' if self.training else 'val'
 
-            loss_latent = self.get_loss(eps_output, target, mean=False).sum([1, 2, 3])
+            loss_latent = self.get_loss(x_result, target, mean=False).sum([1, 2, 3])
             loss_dict.update({f'{prefix}/loss_latent': loss_latent.mean()})
 
             # variational lower bound loss --------------------------------------
@@ -1227,8 +1227,8 @@ class LatentDiffusion(DDPM):
 
             # [metrics for video] only validation step -------------------------------------------------
             if not self.training:
-                videos1 = torch.clamp((x_pixel)/.5,0,1)
-                videos2 = torch.clamp((target_pixel+1)/.5,0,1)
+                videos1 = torch.clamp((x_pixel+1)/2,0,1)
+                videos2 = torch.clamp((target_pixel+1)/2,0,1)
 
                 if videos1.shape[1] >= 10: 
                     fvd = calculate_fvd1(videos1, videos2, self.device)
@@ -1574,7 +1574,7 @@ class LatentDiffusion(DDPM):
                 ddim_sampler = DDIMSampler(self)
                 tmp_samples, tmp_intermediates = ddim_sampler.sample(ddim_steps, batch_size, shape, cond=cond, verbose=False, x_T=x_input, log_every_t=50, **kwargs)
                 z_result = torch.cat([z_result, tmp_samples[:,-self.frame_num.pred*self.channels:]], dim=1)
-                z_intermediates.append(torch.stack(tmp_intermediates['pred_x0'])[:,:,-self.frame_num.pred*self.channels:]) # 'pred_x0' is DDIM's predicted x0
+                z_intermediates.append(torch.stack(tmp_intermediates['x_inter'])[:,:,-self.frame_num.pred*self.channels:]) # 'pred_x0' is DDIM's predicted x0
             else:
                 tmp_samples, tmp_intermediates = self.sample(cond, shape, batch_size=batch_size, return_intermediates=True, x_T=x_input, verbose=False)
                 z_result = torch.cat([z_result, tmp_samples[:,-self.frame_num.pred*self.channels:]], dim=1)
@@ -1747,7 +1747,7 @@ class LatentDiffusion(DDPM):
         if plot_progressive_rows:
             with self.ema_scope("Plotting Progressives ddpm"):
                 tmp_samples, progressives = self.progressive_denoising_log(cond=c, batch_size=N, x_T=z, shape=shape)
-            samples = samples.reshape(N, -1, 3, z.shape[-2], z.shape[-1])
+            tmp_samples = tmp_samples.reshape(N, -1, 3, z.shape[-2], z.shape[-1])
             prog_row = self._get_denoise_row(progressives, desc="Progressive Generation")
             log["ddpm1000_row"] = prog_row
 

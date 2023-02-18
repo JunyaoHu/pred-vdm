@@ -98,7 +98,7 @@ lightning:
         # we do videologger (save local, and upload wandb) when validation, which step % [batch_frequency] == 0
         # if you want to output valid video it should be n*traing_step_in_a_epoch
         # ps: it should run and set it again or estimated it (min batch_frequency = ceil(training dataset / training batchsize / gpus) )
-        batch_frequency: 792 # 198*4
+        batch_frequency: 990 # 198*5
         max_videos: 4
         increase_log_steps: False
 
@@ -106,7 +106,7 @@ lightning:
     benchmark: True
     # accumulate_grad_batches: 2
     # Stop training after training step up to [max_steps]. Disabled by default (-1), it will go on forever until interrupted
-    max_steps: 200000
+    max_steps: 40000
     # log_steps for train_loss (because its log_dict\log is on_step=True), default (50),
     log_every_n_steps: 50
     # Sanity check runs n validation batches before starting the training routine. Set it to -1 to run all batches in all validation dataloaders. Default: 2.
