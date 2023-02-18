@@ -1232,17 +1232,17 @@ class LatentDiffusion(DDPM):
 
                 if videos1.shape[1] >= 10: 
                     fvd = calculate_fvd1(videos1, videos2, self.device)
-                    loss_dict.update({f'{prefix}/metric/fvd': fvd})
+                    loss_dict.update({f'{prefix}/metric/video/fvd': fvd})
 
                 ssim = calculate_ssim1(videos1, videos2)
                 psnr = calculate_psnr1(videos1, videos2)
                 lpips = calculate_lpips1(videos1, videos2, self.device)
-                loss_dict.update({f'{prefix}/metric/ssim_avg': ssim[0]})
-                loss_dict.update({f'{prefix}/metric/ssim_std': ssim[1]})
-                loss_dict.update({f'{prefix}/metric/psnr_avg': psnr[0]})
-                loss_dict.update({f'{prefix}/metric/psnr_std': psnr[1]})
-                loss_dict.update({f'{prefix}/metric/lpips_avg': lpips[0]})
-                loss_dict.update({f'{prefix}/metric/lpips_std': lpips[1]})
+                loss_dict.update({f'{prefix}/metric/image/avg/ssim': ssim[0]})
+                loss_dict.update({f'{prefix}/metric/image/std/ssim': ssim[1]})
+                loss_dict.update({f'{prefix}/metric/image/avg/psnr': psnr[0]})
+                loss_dict.update({f'{prefix}/metric/image/std/psnr': psnr[1]})
+                loss_dict.update({f'{prefix}/metric/image/avg/lpips': lpips[0]})
+                loss_dict.update({f'{prefix}/metric/image/std/lpips': lpips[1]})
 
             return loss, loss_dict
 
