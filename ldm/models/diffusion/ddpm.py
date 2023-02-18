@@ -1270,7 +1270,7 @@ class LatentDiffusion(DDPM):
                 x_input     = torch.cat([x_cond, x_pred_init], dim=1)
                 tmp_noise   = default(noise, lambda: torch.randn_like(x_input)).to(self.device)
                 # rank_zero_info("    q_sample")
-                x_noisy   = self.q_sample(x_start=x_input, t=t, noise=tmp_noise)
+                x_noisy     = self.q_sample(x_start=x_input, t=t, noise=tmp_noise)
                 # rank_zero_info("    apply_model")
                 x_output    = self.apply_model(x_noisy, t, cond)
                 x_result    = torch.cat([x_result, x_output[:, -self.frame_num.pred*self.channels:]], dim=1)
