@@ -77,12 +77,12 @@ def convert_with_all_frames():
 
 def convert_with_2_splits():
     """
-    len train 191
-    len valid 192
-    len test  216
-    min_length train is 382
-    min_length valid is 384
-    min_length test is 432
+    len train 382
+    len valid 384
+    len test  432
+    min_length train is 105
+    min_length valid is 98
+    min_length test is 84
     """
     for data_split in ['train', 'valid', 'test']:
         print('Converting ' + data_split)
@@ -124,16 +124,18 @@ def convert_with_2_splits():
         print('Converting', data_split, 'done.')
         print("")
 
-def convert_with_mini_split(train, valid, test):
+def convert_into_mini_splits(train, valid, test):
     """
-    len train 6356
-    len valid 1723
-    len test  1947
+    len train 25535
+    len valid 256
+    len test  256
     min_length train is 15
-    min_length valid is 50
+    min_length valid is 20
     min_length test is 50
     """
     for data_split in ['train', 'valid', 'test']:
+
+        count = 0
 
         if data_split == "train":
             frame_num = train
@@ -151,29 +153,46 @@ def convert_with_mini_split(train, valid, test):
                 # print('     Converting person' + person_id)
                 for action in kth_actions_dict['person'+person_id]:
                     for setting in kth_actions_dict['person'+person_id][action]:
-                        # index of kth_actions_frames.py starts from 1 but we need 0
-                        # and wo should fix to [a,b) not [a,b]
-                        # eg: 1-12, ... 124-345, length is 345
-                        # ->  0-11, ... 123-344, length is 345
-                        # ->  0-345, length is 345 same
-                        # -> we get 0-5, 5-10, 10-15, ... as final dataset
+                        for setting in kth_actions_dict['person'+person_id][action]:
 
-                        a_list = sorted(kth_actions_dict['person'+person_id][action][setting])
-                        start_frame_idx = a_list[0][0] - 1
-                        end_frames_idx = a_list[-1][1]
+                            if data_split == "train":
+                                
+                                a_list = sorted(kth_actions_dict['person'+person_id][action][setting])
+                                start_frame_idx = a_list[0][0] - 1
+                                end_frames_idx = a_list[-1][1]
+                                get_clip_num = (end_frames_idx - start_frame_idx) //  frame_num
+                                for i in range(get_clip_num):
+                                    file_name = 'person' + person_id + '_' + action + '_' + setting + '_uncomp.avi'
+                                    file_path = os.path.join(action, file_name)         
+                                    f.write(f"{file_path} {i*frame_num} {(i+1)*frame_num}\n")
+                                    count += 1
 
-                        get_clip_num = (end_frames_idx - start_frame_idx) //  frame_num
+                            else:
+                                for frame_idxs in kth_actions_dict['person'+person_id][action][setting]:
+                                    file_name = 'person' + person_id + '_' + action + '_' + setting + '_uncomp.avi'
+                                    file_path = os.path.join(action, file_name)
+                                    start_frame_idxs = frame_idxs[0] - 1
+                                    end_frames_idxs = frame_idxs[1]
 
-                        for i in range(get_clip_num):
-                            file_name = 'person' + person_id + '_' + action + '_' + setting + '_uncomp.avi'
-                            file_path = os.path.join(action, file_name)         
-                            f.write(f"{file_path} {i*frame_num} {(i+1)*frame_num}\n")
-        print('Converting', data_split, 'done.')
+                                    if frame_num <= end_frames_idxs - start_frame_idxs:
+                                        f.write(f"{file_path} {start_frame_idxs} {start_frame_idxs + frame_num}\n")
+                                        count += 1
+                                        break
+                                
+        # make_valid_and_test_as_max256 batches for calculate FVD anb other metrics 
+        if data_split != "train" and count > 256:
+            import random
+            random.seed(2023)     
+            with open(f"./data/KTH/{data_split}-mini.txt", 'r') as f:
+                lines = f.readlines()
+            lines = random.sample(lines, 256)
+            count = 256
+            with open(f"./data/KTH/{data_split}-mini.txt", 'w') as f:
+                f.writelines(lines)
+        print(f"count is {count}")
     print("")
 
 # convert_with_official_split()
-# print("")
 # convert_with_all_frames()
-# print("")
 # convert_with_2_splits()
-convert_with_mini_split(15,50,50)
+convert_into_mini_splits(15,20,50)

@@ -359,7 +359,7 @@ class VideoLogger(Callback):
     def _wandb(self, pl_module, videos, batch_idx, split):
         # for pytorch-lightning > 1.6.0
         tag = f"{split}"
-        columns = ["inputs", "reconstruction", "latent_z_origin", "latent_z_sample", "samples", "diffusion_row", "ddpm1000_row", "ddim200_row"]
+        columns = ["input","recon","z_origin","z_sample","ddim200","ddim200_quantized", "ddpm1000", "diffusion_row", "ddim200_row", "ddpm1000_row"]
         data = []
         rank_zero_info("upload wandb")
         for k in columns:
@@ -370,7 +370,7 @@ class VideoLogger(Callback):
                 grids = list([wandb.Image(i) for i in grids])
                 data.append(grids)
 
-            elif k in ["inputs", "reconstruction", "samples", "latent_z_origin", "latent_z_sample"]:
+            elif k in ["input","recon","z_origin","z_sample","ddim200","ddim200_quantized", "ddpm1000"]:
                 grids = videos[k]
                 if self.rescale:
                     grids = np.array(((grids + 1.0) * 127.5)).astype(np.uint8) 
@@ -404,7 +404,7 @@ class VideoLogger(Callback):
                     path = os.path.join(root, filename)
                     os.makedirs(os.path.split(path)[0], exist_ok=True)
                     media.write_image(path, grid.numpy())
-            elif k in ["inputs", "reconstruction", "samples"]:
+            elif k in ["input","recon","z_origin","z_sample","ddim200","ddim200_quantized", "ddpm1000"]:
                 for i in range(videos[k].shape[0]):
                     video = einops.rearrange(videos[k][i], "t c h w -> t h w c")
                     if self.rescale:
@@ -428,15 +428,12 @@ class VideoLogger(Callback):
         else:
             check_idx = pl_module.global_step
         
-
         # batch_idx % self.batch_freq == 0
         if (self.check_frequency(check_idx)
             and hasattr(pl_module, "log_videos") 
             and callable(pl_module.log_videos) 
             and self.max_videos > 0):
             rank_zero_info("log video")
-            # FIXME: it really spend too much time when output log                                                            
-
             logger = type(pl_module.logger)
 
             is_train = pl_module.training
@@ -444,13 +441,11 @@ class VideoLogger(Callback):
                 pl_module.eval()
 
             with torch.no_grad():
-                videos = pl_module.log_videos(batch, split=split, **self.log_videos_kwargs)
+                videos = pl_module.log_videos(batch, split=split, N=self.max_videos, **self.log_videos_kwargs)
 
-            # key = ["inputs" "reconstruction" "diffusion_row" "samples" "ddim200_row" "ddpm1000_row"]
-            # now, we not have "samples_x0_quantized" "samples_inpainting" "mask" "samples_outpainting" 
+            # key = ["input","recon","z_origin","z_sample","ddim200","ddim200_quantized", "ddpm1000", "diffusion_row", "ddim200_row", "ddpm1000_row"]
+            # now, we not have  "samples_inpainting" "mask" "samples_outpainting" 
             for k in videos:
-                N = min(videos[k].shape[0], self.max_videos)
-                videos[k] = videos[k][:N]
                 if isinstance(videos[k], torch.Tensor):
                     videos[k] = videos[k].detach().cpu()
                     if self.clamp:
@@ -478,9 +473,11 @@ class VideoLogger(Callback):
             return True
         return False
 
+    # TODO: for train_batch_end video logger setting
     def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx):
-        if not self.disabled and (pl_module.global_step > 0 or self.log_first_step):
-            self.log_video(pl_module, batch, batch_idx, split="train")
+        # if not self.disabled and (pl_module.global_step > 0 or self.log_first_step):
+        #     self.log_video(pl_module, batch, batch_idx, split="train")
+        pass
 
     def on_validation_batch_end(self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx):
         if not self.disabled and pl_module.global_step > 0:
@@ -744,7 +741,7 @@ if __name__ == "__main__":
                 "params": {
                     "batch_frequency": 1000,
                     "max_videos": 4,
-                    "clamp": True
+                    "clamp": True,
                 }
             },
             "learning_rate_logger": {
@@ -860,20 +857,20 @@ if __name__ == "__main__":
             # trainer.validate(model, data)
             pass
     except Exception:
-        # if opt.debug and trainer.global_rank == 0:
-        #     try:
-        #         import pudb as debugger
-        #     except ImportError:
-        #         import pdb as debugger
-        #     debugger.post_mortem()
+        if opt.debug and trainer.global_rank == 0:
+            try:
+                import pudb as debugger
+            except ImportError:
+                import pdb as debugger
+            debugger.post_mortem()
         raise
     finally:
         # move newly created debug project to debug_runs
-        # if opt.debug and not opt.resume and trainer.global_rank == 0:
-        #     dst, name = os.path.split(logdir)
-        #     dst = os.path.join(dst, "debug_runs", name)
-        #     os.makedirs(os.path.split(dst)[0], exist_ok=True)
-        #     os.rename(logdir, dst)
+        if opt.debug and not opt.resume and trainer.global_rank == 0:
+            dst, name = os.path.split(logdir)
+            dst = os.path.join(dst, "debug_runs", name)
+            os.makedirs(os.path.split(dst)[0], exist_ok=True)
+            os.rename(logdir, dst)
         if trainer.global_rank == 0:
             print(trainer.profiler.summary())
 

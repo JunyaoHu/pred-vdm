@@ -73,12 +73,12 @@ class DDPM(pl.LightningModule):
                  linear_end=2e-2,
                  cosine_s=8e-3,
                  given_betas=None,
-                 original_elbo_weight=0.1,
+                 original_elbo_weight=.0,
                  v_posterior=0.,  # weight for choosing posterior variance as sigma = (1-v) * beta_tilde + v * beta
-                 l_latent_weight=0.6,
-                 l_pixel_weight=0.3,
+                 l_latent_weight=0.8,
+                 l_pixel_weight=0.2,
                  conditioning_key=None,
-                 parameterization="x0",  # all assuming fixed variance schedules
+                 parameterization="eps",  # all assuming fixed variance schedules
                  scheduler_config=None,
                  use_positional_encodings=False,
                  learn_logvar=False,
@@ -170,8 +170,7 @@ class DDPM(pl.LightningModule):
             (1. - alphas_cumprod_prev) * np.sqrt(alphas) / (1. - alphas_cumprod)))
 
         if self.parameterization == "eps":
-            lvlb_weights = self.betas ** 2 / (
-                        2 * self.posterior_variance * to_torch(alphas) * (1 - self.alphas_cumprod))
+            lvlb_weights = self.betas ** 2 / (2 * self.posterior_variance * to_torch(alphas) * (1 - self.alphas_cumprod))
         elif self.parameterization == "x0":
             lvlb_weights = 0.5 * np.sqrt(torch.Tensor(alphas_cumprod)) / (2. * 1 - torch.Tensor(alphas_cumprod))
         else:
@@ -193,8 +192,8 @@ class DDPM(pl.LightningModule):
         finally:
             if self.use_ema:
                 self.model_ema.restore(self.model.parameters())
-                if context is not None:
-                    rank_zero_info(f"{context}: Restored training weights")
+                # if context is not None:
+                #     rank_zero_info(f"{context}: Restored training weights")
 
     def init_from_ckpt(self, path, ignore_keys=list(), only_model=False):
         sd = torch.load(path, map_location="cpu")
@@ -381,7 +380,7 @@ class DDPM(pl.LightningModule):
     def training_step(self, batch, batch_idx):
         loss, loss_dict = self.shared_step(batch)
         self.log_dict(loss_dict, prog_bar=False,logger=True, on_step=True, on_epoch=False)
-        self.log("global_step", self.global_step, prog_bar=True, logger=False, on_step=True, on_epoch=False)
+        self.log("global_step", self.global_step*1.0, prog_bar=True, logger=False, on_step=True, on_epoch=False)
         if self.use_scheduler:
             lr = self.optimizers().param_groups[0]['lr']
             self.log('lr_abs', lr, prog_bar=False, logger=True, on_step=True, on_epoch=False)
@@ -390,6 +389,7 @@ class DDPM(pl.LightningModule):
     
     @torch.no_grad()
     def validation_step(self, batch, batch_idx):
+        rank_zero_info("validation_step: no EMA")
         _, loss_dict_no_ema = self.shared_step(batch)
         with self.ema_scope("validation_step"):
             _, loss_dict_ema = self.shared_step(batch)
@@ -398,6 +398,7 @@ class DDPM(pl.LightningModule):
         self.log_dict(loss_dict_ema, prog_bar=False, logger=True, on_step=False, on_epoch=True, sync_dist=True)
 
     def test_step(self, batch, batch_idx):
+        rank_zero_info("Test_step: no EMA")
         _, loss_dict_no_ema = self.shared_step(batch)
         with self.ema_scope("test_step"):
             _, loss_dict_ema = self.shared_step(batch)
@@ -737,25 +738,26 @@ class LatentDiffusion(DDPM):
             x = x[:bs]
         x = x.to(self.device)
 
-        # TODO: when train and log(valid test)?
-        # I have set x length when dataset loading eg train is 15 and val/test is 40
-        # x = x[:,:(self.frame_num.cond+self.frame_num.pred)]
-        # print("x.shape", x.shape)
+        # rank_zero_info(f"x shape {x.shape}")
 
         batch_size = x.shape[0]
 
         # based on image encode process
         # we encode the video frame by frame then stack them into latent video space
-        rank_zero_info("get input encode")
+        # rank_zero_info("get input encode")
 
         z = []
         for i in range(batch_size):
             z.append(self.encode_first_stage(x[i]))
         z = torch.stack(z)
+
+        # rank_zero_info(f"z {z.shape}")
+        # rank_zero_info(f"min max mean {torch.min(z)} {torch.max(z)} {torch.mean(z)}")
+
         z = self.get_first_stage_encoding(z).detach()
         z = rearrange(z, 'b t c h w -> b (t c) h w')
 
-        rank_zero_info("get input encode done")
+        # rank_zero_info("get input encode done")
         # z torch.Size([64, 45, 16, 16])
         # print("z", z.shape)
         
@@ -791,7 +793,6 @@ class LatentDiffusion(DDPM):
                 xc = x
             if not self.cond_stage_trainable or force_c_encode:
                 if isinstance(xc, dict) or isinstance(xc, list):
-                    # import pudb; pudb.set_trace()
                     c = self.get_learned_conditioning(xc)
                 else:
                     c = self.get_learned_conditioning(xc.to(self.device))
@@ -833,14 +834,14 @@ class LatentDiffusion(DDPM):
             v
             x_rec (prepare for output)
             """
-            rank_zero_info("get input decode")
+            # rank_zero_info("get input decode")
             tmp_z = z.reshape(batch_size, -1, self.channels, self.image_size, self.image_size)
             x_rec = []
             for i in range(batch_size):
                 x_rec.append(self.decode_first_stage(tmp_z[i]))
             x_rec = torch.stack(x_rec)
             del tmp_z
-            rank_zero_info("get input decode done")
+            # rank_zero_info("get input decode done")
             # x_rec torch.Size([8, 15, 3, 64, 64])
             # print("x_rec", x_rec.shape)
             out.append(x_rec)
@@ -914,67 +915,6 @@ class LatentDiffusion(DDPM):
                 return self.first_stage_model.decode(z, force_not_quantize=predict_cids or force_not_quantize)
             else:
                 return self.first_stage_model.decode(z)
-
-    def differentiable_decode_first_stage(self, z, predict_cids=False, force_not_quantize=False):
-    # same as above but without decorator
-    #     if predict_cids:
-    #         if z.dim() == 4:
-    #             z = torch.argmax(z.exp(), dim=1).long()
-    #         z = self.first_stage_model.quantize.get_codebook_entry(z, shape=None)
-    #         z = rearrange(z, 'b h w c -> b c h w').contiguous()
-
-    #     z = 1. / self.scale_factor * z
-
-    #     if hasattr(self, "split_input_params"):
-    #         if self.split_input_params["patch_distributed_vq"]:
-    #             ks = self.split_input_params["ks"]  # eg. (128, 128)
-    #             stride = self.split_input_params["stride"]  # eg. (64, 64)
-    #             uf = self.split_input_params["vqf"]
-    #             bs, nc, h, w = z.shape
-    #             if ks[0] > h or ks[1] > w:
-    #                 ks = (min(ks[0], h), min(ks[1], w))
-    #                 print("reducing Kernel")
-
-    #             if stride[0] > h or stride[1] > w:
-    #                 stride = (min(stride[0], h), min(stride[1], w))
-    #                 print("reducing stride")
-
-    #             fold, unfold, normalization, weighting = self.get_fold_unfold(z, ks, stride, uf=uf)
-
-    #             z = unfold(z)  # (bn, nc * prod(**ks), L)
-    #             # 1. Reshape to img shape
-    #             z = z.view((z.shape[0], -1, ks[0], ks[1], z.shape[-1]))  # (bn, nc, ks[0], ks[1], L )
-
-    #             # 2. apply model loop over last dim
-    #             if isinstance(self.first_stage_model, VQModelInterface):  
-    #                 output_list = [self.first_stage_model.decode(z[:, :, :, :, i],
-    #                                                              force_not_quantize=predict_cids or force_not_quantize)
-    #                                for i in range(z.shape[-1])]
-    #             else:
-
-    #                 output_list = [self.first_stage_model.decode(z[:, :, :, :, i])
-    #                                for i in range(z.shape[-1])]
-
-    #             o = torch.stack(output_list, axis=-1)  # # (bn, nc, ks[0], ks[1], L)
-    #             o = o * weighting
-    #             # Reverse 1. reshape to img shape
-    #             o = o.view((o.shape[0], -1, o.shape[-1]))  # (bn, nc * ks[0] * ks[1], L)
-    #             # stitch crops together
-    #             decoded = fold(o)
-    #             decoded = decoded / normalization  # norm is shape (1, 1, h, w)
-    #             return decoded
-    #         else:
-    #             if isinstance(self.first_stage_model, VQModelInterface):
-    #                 return self.first_stage_model.decode(z, force_not_quantize=predict_cids or force_not_quantize)
-    #             else:
-    #                 return self.first_stage_model.decode(z)
-
-    #     else:
-    #         if isinstance(self.first_stage_model, VQModelInterface):
-    #             return self.first_stage_model.decode(z, force_not_quantize=predict_cids or force_not_quantize)
-    #         else:
-    #             return self.first_stage_model.decode(z)
-        pass
 
     @torch.no_grad()
     def encode_first_stage(self, x):
@@ -1190,126 +1130,228 @@ class LatentDiffusion(DDPM):
         #   difussion forward process (imnoise process)
         #   value randint[0, 1000step] shape [b,]
 
-        # we set different length for train and val\test, so ...
-        x_cond = x_start[:, : self.frame_num.cond*self.channels]
-        x_pred = x_start[:, self.frame_num.cond*self.channels:]       # true !
-        # x_pred = x_start[:, -self.frame_num.pred*self.channels:]    # false !
+        if self.parameterization == "eps":
+            # TODO: for self.parameterization == "eps":
+            # we set different length for train and val\test, so ...
 
-        x_result = x_cond
-        x_output = None
+            x_cond = x_start[:, : self.frame_num.cond*self.channels]
+            x_pred = x_start[:, self.frame_num.cond*self.channels:]       # true !
+            # x_pred = x_start[:, -self.frame_num.pred*self.channels:]    # false !
+            
+            x_noise    = torch.zeros_like(x_cond) # only for padding, model will inference to it then get loss
+            x_result   = torch.zeros_like(x_cond) # only for padding
+            eps_output = torch.zeros_like(x_cond) # only for padding, we get by latent_eps -> latent_z0 -> latent_x0
 
-        # like total 50 pred 5 cond 10, we need do ceil[(50-10)/5] = 8 times autogression 
-        autogression_num = ceil( (x_start.shape[1] - self.frame_num.cond*self.channels) / (self.frame_num.pred*self.channels))  # true  !
-        # autogression_num = ceil( (self.frame_num.total - self.frame_num.cond) / self.frame_num.pred)                          # false !
+            # like total 50 pred 5 cond 10, we need do ceil[(50-10)/5] = 8 times autogression 
+            autogression_num = ceil( (x_start.shape[1] - self.frame_num.cond*self.channels) / (self.frame_num.pred*self.channels))  # true  !
+            # autogression_num = ceil( (self.frame_num.total - self.frame_num.cond) / self.frame_num.pred)                          # false !
 
-        rank_zero_info(f"p_losses start predicting {autogression_num} times") 
-        for i in range(autogression_num):
-            start_idx   = (self.frame_num.cond + self.frame_num.pred*i)*self.channels
-            end_idx     = (self.frame_num.cond + self.frame_num.pred*(i+1))*self.channels
-            rank_zero_info(f"    predict: [{start_idx}:{end_idx}]")
+            # rank_zero_info(f"p_losses start predicting {autogression_num} times") 
+            for i in range(autogression_num):
+                # start_idx   = (self.frame_num.cond + self.frame_num.pred*i)*self.channels
+                # end_idx     = (self.frame_num.cond + self.frame_num.pred*(i+1))*self.channels
+                # rank_zero_info(f"    predict: [{start_idx}:{end_idx}]")
 
-            x_cond      = x_result[:, -self.frame_num.cond*self.channels:]
-            x_pred_rand = (torch.rand(x_pred.shape[0], self.frame_num.pred*self.channels, self.image_size, self.image_size)*2-1).to(self.device)
-            x_input     = torch.cat([x_cond, x_pred_rand], dim=1)
-            x_noise     = default(noise, lambda: torch.randn_like(x_input)).to(self.device)
-            # rank_zero_info("    q_sample")
-            x_noisy     = self.q_sample(x_start=x_input, t=t, noise=x_noise)
-            # rank_zero_info("    apply_model")
-            x_output    = self.apply_model(x_noisy, t, cond)
-            x_result    = torch.cat([x_result, x_output[:, -self.frame_num.pred*self.channels:]], dim=1)
-        
-        x_result    = x_result[:, self.frame_num.cond*self.channels:self.frame_num.cond*self.channels+x_pred.shape[1]]          # true !
-        # x_result    = x_result[:, -self.frame_num.pred*self.channels:]                                                        # false !
+                x_cond      = x_result[:, -self.frame_num.cond*self.channels:]
+                x_pred_init = (torch.rand(x_pred.shape[0], self.frame_num.pred*self.channels, self.image_size, self.image_size)*2-1).to(self.device)
+                x_input     = torch.cat([x_cond, x_pred_init], dim=1)
+                tmp_noise   = default(noise, lambda: torch.randn_like(x_input)).to(self.device)
+                # rank_zero_info("    q_sample")
+                x_noisy     = self.q_sample(x_start=x_input, t=t, noise=tmp_noise)
+                # rank_zero_info("    apply_model")
+                tmp_eps_output = self.apply_model(x_noisy, t, cond)
+                x_output    = self.predict_start_from_noise(x_noisy, t=t, noise=tmp_eps_output)
 
-        rank_zero_info("p_losses predicting autogression done")
-        
-        # print(f"x_start.shape , {x_start.shape}")
-        # print(f"x_cond.shape  , {x_cond.shape}")
-        # print(f"x_result.shape, {x_result.shape}")
-        # x_start.shape , torch.Size([64, 45, 16, 16])
-        # x_cond.shape  , torch.Size([64, 30, 16, 16])
-        # x_result.shape, torch.Size([64, 15, 16, 16])
-    
+                x_noise     = torch.cat([x_noise,    tmp_noise[:, -self.frame_num.pred*self.channels:]],      dim=1)
+                eps_output  = torch.cat([eps_output, tmp_eps_output[:, -self.frame_num.pred*self.channels:]], dim=1)
+                x_result    = torch.cat([x_result,   x_output[:, -self.frame_num.pred*self.channels:]],       dim=1)
+  
+            eps_output  = eps_output[:, self.frame_num.cond*self.channels:self.frame_num.cond*self.channels+x_pred.shape[1]]        # for getting latent loss
+            x_noise     = x_noise   [:, self.frame_num.cond*self.channels:self.frame_num.cond*self.channels+x_pred.shape[1]]        # for getting latent loss
+            x_result    = x_result  [:, self.frame_num.cond*self.channels:self.frame_num.cond*self.channels+x_pred.shape[1]]        # true ! for preparing to get pixel loss
+            # x_result    = x_result[:, -self.frame_num.pred*self.channels:]                                                        # false !
+            
+            # rank_zero_info("p_losses predicting autogression done")
+
+            # loss_latent ------------------------------------------------
+            
+            target = x_noise
+
+            # print(f"x_result_pred.shape, {x_result_pred.shape}")
+            # print(f"target.shape       , {target.shape}")
+            # x_result_pred.shape, torch.Size([64, 15, 16, 16])
+            # target.shape       , torch.Size([64, 15, 16, 16])
+
+            loss_dict = {}
+            prefix = 'train' if self.training else 'val'
+
+            loss_latent = self.get_loss(eps_output, target, mean=False).sum([1, 2, 3])
+            loss_dict.update({f'{prefix}/loss_latent': loss_latent.mean()})
+
+            # variational lower bound loss --------------------------------------
+
+            loss_vlb = (self.lvlb_weights[t] * loss_latent).mean()
+            loss_dict.update({f'{prefix}/loss_vlb': loss_vlb})
+
+            # loss_pixel -------------------------------------------------
+
+            x_result = x_result.reshape(x_result.shape[0], -1, self.channels, self.image_size, self.image_size)
+            
+            # rank_zero_info("p_losses decode for loss")
+            x_pixel = []
+            for i in range(x_result.shape[0]):
+                x_pixel.append(self.decode_first_stage(x_result[i]))
+            x_pixel = torch.stack(x_pixel) 
+            # rank_zero_info("p_losses decode for loss done")
+
+            target_pixel = x_start_pixel[:,self.frame_num.cond:]
+
+            # print("x_pixel     ", x_pixel.shape)
+            # print("target_pixel       ", target_pixel.shape)
+
+            loss_pixel = self.get_loss(x_pixel, target_pixel, mean=False).sum([1, 2, 3])
+            loss_dict.update({f'{prefix}/loss_pixel': loss_pixel.mean()})
+
+            # if self.learn_logvar:
+            #     logvar_t = self.logvar[t].to(self.device)
+            #     loss_gamma = loss_simple_latent / torch.exp(logvar_t) + logvar_t
+            #     # loss = loss_simple / torch.exp(self.logvar) + self.logvar
+            #     loss_dict.update({f'{prefix}/loss_gamma': loss_gamma.mean()})
+            #     loss_dict.update({'logvar': self.logvar.data.mean()})
+            #     loss = self.l_simple_weight * loss_gamma.mean() + self.original_elbo_weight * loss_vlb
+
+            # loss_sum -------------------------------------------------------
+            loss = self.l_latent_weight * loss_latent.mean() + self.original_elbo_weight * loss_vlb + self.l_pixel_weight * loss_pixel.mean()
+
+            loss_dict.update({f'{prefix}/loss': loss})
+
+            # [metrics for video] only validation step -------------------------------------------------
+            if not self.training:
+                videos1 = torch.clamp((x_pixel)/.5,0,1)
+                videos2 = torch.clamp((target_pixel+1)/.5,0,1)
+
+                if videos1.shape[1] >= 10: 
+                    fvd = calculate_fvd1(videos1, videos2, self.device)
+                    loss_dict.update({f'{prefix}/metric/fvd': fvd})
+
+                ssim = calculate_ssim1(videos1, videos2)
+                psnr = calculate_psnr1(videos1, videos2)
+                lpips = calculate_lpips1(videos1, videos2, self.device)
+                loss_dict.update({f'{prefix}/metric/ssim_avg': ssim[0]})
+                loss_dict.update({f'{prefix}/metric/ssim_std': ssim[1]})
+                loss_dict.update({f'{prefix}/metric/psnr_avg': psnr[0]})
+                loss_dict.update({f'{prefix}/metric/psnr_std': psnr[1]})
+                loss_dict.update({f'{prefix}/metric/lpips_avg': lpips[0]})
+                loss_dict.update({f'{prefix}/metric/lpips_std': lpips[1]})
+
+            return loss, loss_dict
+
+
         if self.parameterization == "x0":
+
+            # we set different length for train and val\test, so ...
+            x_cond = x_start[:, : self.frame_num.cond*self.channels]
+            x_pred = x_start[:, self.frame_num.cond*self.channels:]       # true !
+            # x_pred = x_start[:, -self.frame_num.pred*self.channels:]    # false !
+            
+            x_result = torch.zeros_like(x_cond) # only for padding
+
+            # like total 50 pred 5 cond 10, we need do ceil[(50-10)/5] = 8 times autogression 
+            autogression_num = ceil( (x_start.shape[1] - self.frame_num.cond*self.channels) / (self.frame_num.pred*self.channels))  # true  !
+            # autogression_num = ceil( (self.frame_num.total - self.frame_num.cond) / self.frame_num.pred)                          # false !
+
+            # rank_zero_info(f"p_losses start predicting {autogression_num} times") 
+            for i in range(autogression_num):
+                # start_idx   = (self.frame_num.cond + self.frame_num.pred*i)*self.channels
+                # end_idx     = (self.frame_num.cond + self.frame_num.pred*(i+1))*self.channels
+                # rank_zero_info(f"    predict: [{start_idx}:{end_idx}]")
+                x_cond      = x_result[:, -self.frame_num.cond*self.channels:]
+                x_pred_init = (torch.rand(x_pred.shape[0], self.frame_num.pred*self.channels, self.image_size, self.image_size)*2-1).to(self.device)
+                x_input     = torch.cat([x_cond, x_pred_init], dim=1)
+                tmp_noise   = default(noise, lambda: torch.randn_like(x_input)).to(self.device)
+                # rank_zero_info("    q_sample")
+                x_noisy   = self.q_sample(x_start=x_input, t=t, noise=tmp_noise)
+                # rank_zero_info("    apply_model")
+                x_output    = self.apply_model(x_noisy, t, cond)
+                x_result    = torch.cat([x_result, x_output[:, -self.frame_num.pred*self.channels:]], dim=1)
+
+            x_result    = x_result[:, self.frame_num.cond*self.channels:self.frame_num.cond*self.channels+x_pred.shape[1]]          # true !
+            # x_result    = x_result[:, -self.frame_num.pred*self.channels:]                                                        # false !
+                      
+            # rank_zero_info("p_losses predicting autogression done")
+
+            # 1. loss_latent ------------------------------------------------
+            
             target = x_pred
-        # TODO: x_noise mode
-        # elif self.parameterization == "eps":
-        #     target = x_noise
-        else:
-            raise NotImplementedError()
 
-        # print(f"x_result_pred.shape, {x_result_pred.shape}")
-        # print(f"target.shape       , {target.shape}")
-        # x_result_pred.shape, torch.Size([64, 15, 16, 16])
-        # target.shape       , torch.Size([64, 15, 16, 16])
+            loss_dict = {}
+            prefix = 'train' if self.training else 'val'
 
-        loss_dict = {}
-        prefix = 'train' if self.training else 'val'
+            loss_latent = self.get_loss(x_result, target, mean=False).sum([1, 2, 3])
+            loss_dict.update({f'{prefix}/loss_latent': loss_latent.mean()})
 
-        # loss_latent ------------------------------------------------
-        loss_latent = self.get_loss(x_result, target, mean=False).mean([1, 2, 3])
-        loss_dict.update({f'{prefix}/loss_latent': loss_latent.mean()})
+            # 2. variational lower bound loss --------------------------------------
 
-        # variational lower bound loss --------------------------------------
-        loss_vlb = (self.lvlb_weights[t] * loss_latent).mean()
-        loss_dict.update({f'{prefix}/loss_vlb': loss_vlb})
+            loss_vlb = (self.lvlb_weights[t] * loss_latent).mean()
+            loss_dict.update({f'{prefix}/loss_vlb': loss_vlb})
 
-        # loss_pixel -------------------------------------------------
-        x_result = x_result.reshape(x_result.shape[0], -1, self.channels, self.image_size, self.image_size)
-        
-        rank_zero_info("p_losses decode for loss")
-        x_result_pixel = []
-        for i in range(x_result.shape[0]):
-            x_result_pixel.append(self.decode_first_stage(x_result[i]))
-        x_result_pixel = torch.stack(x_result_pixel) 
-        rank_zero_info("p_losses decode for loss done")
+            # 3. loss_pixel -------------------------------------------------
 
-        target_pixel = x_start_pixel[:,self.frame_num.cond:]
+            x_result = x_result.reshape(x_result.shape[0], -1, self.channels, self.image_size, self.image_size)
+            
+            # rank_zero_info("p_losses decode for loss")
+            x_pixel = []
+            for i in range(x_result.shape[0]):
+                x_pixel.append(self.decode_first_stage(x_result[i]))
+            x_pixel = torch.stack(x_pixel) 
+            # rank_zero_info("p_losses decode for loss done")
 
-        # print("x_result_pixel     ", x_result_pixel.shape)
-        # print("target_pixel       ", target_pixel.shape)
+            target_pixel = x_start_pixel[:,self.frame_num.cond:]
 
-        loss_pixel = self.get_loss(x_result_pixel, target_pixel, mean=False).mean([1, 2, 3])
-        loss_dict.update({f'{prefix}/loss_pixel': loss_pixel.mean()})
+            # print("x_pixel       ", x_pixel.shape)
+            # print("target_pixel  ", target_pixel.shape)
 
-        # if self.learn_logvar:
-        #     logvar_t = self.logvar[t].to(self.device)
-        #     loss_gamma = loss_simple_latent / torch.exp(logvar_t) + logvar_t
-        #     # loss = loss_simple / torch.exp(self.logvar) + self.logvar
-        #     loss_dict.update({f'{prefix}/loss_gamma': loss_gamma.mean()})
-        #     loss_dict.update({'logvar': self.logvar.data.mean()})
-        #     loss = self.l_simple_weight * loss_gamma.mean() + self.original_elbo_weight * loss_vlb
+            loss_pixel = self.get_loss(x_pixel, target_pixel, mean=False).sum([1, 2, 3])
+            loss_dict.update({f'{prefix}/loss_pixel': loss_pixel.mean()})
 
-        # loss_sum -------------------------------------------------------
-        loss = self.l_latent_weight * loss_latent.mean() + self.original_elbo_weight * loss_vlb + self.l_pixel_weight * loss_pixel.mean()
+            # TODO: Unsupport self.learn_logvar == True
+            # if self.learn_logvar:
+            #     logvar_t = self.logvar[t].to(self.device)
+            #     loss_gamma = loss_latent / torch.exp(logvar_t) + logvar_t
+            #     # loss = loss_simple / torch.exp(self.logvar) + self.logvar
+            #     loss_dict.update({f'{prefix}/loss_gamma': loss_gamma.mean()})
+            #     loss_dict.update({'logvar': self.logvar.data.mean()})
+            #     loss = self.l_simple_weight * loss_gamma.mean() + self.original_elbo_weight * loss_vlb
 
-        loss_dict.update({f'{prefix}/loss': loss})
+            # loss_sum -------------------------------------------------------
+            loss = self.l_latent_weight * loss_latent.mean() + self.original_elbo_weight * loss_vlb + self.l_pixel_weight * loss_pixel.mean()
 
-        # [metrics for video] only validation step -------------------------------------------------
-        if not self.training:
-            videos1 = x_result_pixel
-            videos2 = target_pixel
+            loss_dict.update({f'{prefix}/loss': loss})
 
-            if videos1.shape[1] >= 10: 
-                fvd = calculate_fvd1(videos1, videos2, self.device)
-                loss_dict.update({f'{prefix}/metric/fvd': fvd})
+            # [metrics for video] only validation step -------------------------------------------------
 
-            ssim = calculate_ssim1(videos1, videos2)
-            psnr = calculate_psnr1(videos1, videos2)
-            lpips = calculate_lpips1(videos1, videos2, self.device)
-            loss_dict.update({f'{prefix}/metric/ssim_avg': ssim[0]})
-            loss_dict.update({f'{prefix}/metric/ssim_std': ssim[1]})
-            loss_dict.update({f'{prefix}/metric/psnr_avg': psnr[0]})
-            loss_dict.update({f'{prefix}/metric/psnr_std': psnr[1]})
-            loss_dict.update({f'{prefix}/metric/lpips_avg': lpips[0]})
-            loss_dict.update({f'{prefix}/metric/lpips_std': lpips[1]})
+            if not self.training:
+                videos1 = torch.clamp((x_pixel+1)/.5,0,1)
+                videos2 = torch.clamp((target_pixel+1)/.5,0,1)
 
-        return loss, loss_dict
+                if videos1.shape[1] >= 10: 
+                    fvd = calculate_fvd1(videos1, videos2, self.device)
+                    loss_dict.update({f'{prefix}/metric/video/fvd': fvd})
 
-    def p_mean_variance(self, x, c, t, clip_denoised: bool, return_codebook_ids=False, quantize_denoised=False,
-                        return_x0=False, score_corrector=None, corrector_kwargs=None):
-        t_in = t
-        model_out = self.apply_model(x, t_in, c, return_ids=return_codebook_ids)
+                ssim = calculate_ssim1(videos1, videos2)
+                psnr = calculate_psnr1(videos1, videos2)
+                lpips = calculate_lpips1(videos1, videos2, self.device)
+                loss_dict.update({f'{prefix}/metric/image/avg/ssim': ssim[0]})
+                loss_dict.update({f'{prefix}/metric/image/std/ssim': ssim[1]})
+                loss_dict.update({f'{prefix}/metric/image/avg/psnr': psnr[0]})
+                loss_dict.update({f'{prefix}/metric/image/std/psnr': psnr[1]})
+                loss_dict.update({f'{prefix}/metric/image/avg/lpips': lpips[0]})
+                loss_dict.update({f'{prefix}/metric/image/std/lpips': lpips[1]})
+
+            return loss, loss_dict
+
+    def p_mean_variance(self, x, c, t, clip_denoised: bool, return_codebook_ids=False, quantize_denoised=False,return_x0=False, score_corrector=None, corrector_kwargs=None):
+        model_out = self.apply_model(x, t, c, return_ids=return_codebook_ids)
 
         if score_corrector is not None:
             assert self.parameterization == "eps"
@@ -1342,6 +1384,7 @@ class LatentDiffusion(DDPM):
                  return_codebook_ids=False, quantize_denoised=False, return_x0=False,
                  temperature=1., noise_dropout=0., score_corrector=None, corrector_kwargs=None):
         b, *_, device = *x.shape, x.device
+
         outputs = self.p_mean_variance(x=x, c=c, t=t, clip_denoised=clip_denoised,
                                        return_codebook_ids=return_codebook_ids,
                                        quantize_denoised=quantize_denoised,
@@ -1369,8 +1412,7 @@ class LatentDiffusion(DDPM):
             return model_mean + nonzero_mask * (0.5 * model_log_variance).exp() * noise
 
     @torch.no_grad()
-    def progressive_denoising(self, cond, shape, verbose=True, callback=None, quantize_denoised=False,
-                              img_callback=None, mask=None, x0=None, temperature=1., noise_dropout=0.,
+    def progressive_denoising(self, cond, shape, verbose=True, quantize_denoised=False, mask=None, x0=None, temperature=1., noise_dropout=0.,
                               score_corrector=None, corrector_kwargs=None, batch_size=None, x_T=None, start_T=None,
                               log_every_t=None):
         if not log_every_t:
@@ -1382,9 +1424,9 @@ class LatentDiffusion(DDPM):
         else:
             b = batch_size = shape[0]
         if x_T is None:
-            img = torch.randn(shape, device=self.device)
+            video = torch.randn(shape, device=self.device)
         else:
-            img = x_T
+            video = x_T
 
         intermediates = []
 
@@ -1399,7 +1441,7 @@ class LatentDiffusion(DDPM):
             timesteps = min(timesteps, start_T)
 
         if verbose:
-            rank_zero_info(f"Running progressive_denoising with {timesteps} timesteps")
+            # rank_zero_info(f"Running progressive_denoising with {timesteps} timesteps")
             iterator = tqdm(reversed(range(0, timesteps)), desc='Progressive Generation', total=timesteps)  
         else:
             iterator = reversed(range(0, timesteps))
@@ -1415,34 +1457,34 @@ class LatentDiffusion(DDPM):
             #     tc = self.cond_ids[ts].to(cond.device)
             #     cond = self.q_sample(x_start=cond, t=tc, noise=torch.randn_like(cond))
 
-            img, x0_partial = self.p_sample(img, cond, ts,
+            if mask is not None:
+                assert x0 is not None
+                img_orig = self.q_sample(x0, ts)
+                video = img_orig * mask + (1. - mask) * video
+            
+            video, x0_partial = self.p_sample(video, cond, ts,
                                             clip_denoised=self.clip_denoised,
                                             quantize_denoised=quantize_denoised, return_x0=True,
                                             temperature=temperature[i], noise_dropout=noise_dropout,
                                             score_corrector=score_corrector, corrector_kwargs=corrector_kwargs)
             
-            if mask is not None:
-                assert x0 is not None
-                img_orig = self.q_sample(x0, ts)
-                img = img_orig * mask + (1. - mask) * img
-
             if i % log_every_t == 0 or i == timesteps - 1:
                 rank_zero_info(f"progressive_denoising (DDPM) {i} {log_every_t}")
                 intermediates.append(x0_partial)
-            if callback: callback(i)
-            if img_callback: img_callback(img, i)
-        return img, intermediates
+        return video, intermediates
 
     @torch.no_grad()
-    def p_sample_loop(self, cond, shape, return_intermediates=False,
-                      x_T=None, verbose=True, callback=None, timesteps=None, quantize_denoised=False,
-                      mask=None, x0=None, img_callback=None, start_T=None,
+    def p_sample_loop(self, cond, batch_size, shape, return_intermediates=False,
+                      x_T=None, verbose=True, timesteps=None, quantize_denoised=False,
+                      mask=None, x0=None, start_T=None,
                       log_every_t=None):
 
         if not log_every_t:
             log_every_t = self.log_every_t
         device = self.betas.device
-        b = shape[0]
+
+        b = batch_size
+
         if x_T is None:
             video = torch.randn(shape, device=device)
         else:
@@ -1482,19 +1524,14 @@ class LatentDiffusion(DDPM):
             if i % log_every_t == 0 or i == timesteps - 1:
                 rank_zero_info(f"sample_log p_sample (DDPM) {i} {log_every_t}")
                 intermediates.append(video)
-            if callback: callback(i)
-            if img_callback: img_callback(video, i)
-
         if return_intermediates:
             return video, intermediates
         return video
 
     @torch.no_grad()
-    def sample(self, cond, batch_size=16, return_intermediates=False, x_T=None,
+    def sample(self, cond, shape, batch_size=16, return_intermediates=False, x_T=None,
                verbose=True, timesteps=None, quantize_denoised=False,
-               mask=None, x0=None, shape=None,**kwargs):
-        if shape is None:
-            shape = ((self.frame_num.cond+self.frame_num.pred)*self.channels, self.image_size, self.image_size)
+               mask=None, x0=None):
         if cond is not None:
             if isinstance(cond, dict):
                 cond = {key: cond[key][:batch_size] if not isinstance(cond[key], list) else
@@ -1502,6 +1539,7 @@ class LatentDiffusion(DDPM):
             else:
                 cond = [c[:batch_size] for c in cond] if isinstance(cond, list) else cond[:batch_size]
         return self.p_sample_loop(cond,
+                                  batch_size,
                                   shape,
                                   return_intermediates=return_intermediates, x_T=x_T,
                                   verbose=verbose, timesteps=timesteps, quantize_denoised=quantize_denoised,
@@ -1509,9 +1547,9 @@ class LatentDiffusion(DDPM):
 
     @torch.no_grad()
     def sample_log(self, cond, batch_size, ddim, ddim_steps, x_T, shape, **kwargs):
-        rank_zero_info("sample_log autogression")
+        # rank_zero_info("sample_log autogression")
         # x_T [bs, total*ch, h_latent, w_latent]
-        
+
         z_start = x_T
 
         z_cond = z_start[:, :self.frame_num.cond*self.channels]
@@ -1524,34 +1562,32 @@ class LatentDiffusion(DDPM):
         autogression_num = ceil( (z_start.shape[1] - self.frame_num.cond*self.channels) / (self.frame_num.pred*self.channels))
 
         for i in range(autogression_num):
-            start_idx   = (self.frame_num.cond + self.frame_num.pred*i)*self.channels
-            end_idx     = (self.frame_num.cond + self.frame_num.pred*(i+1))*self.channels
-            rank_zero_info(f"    predict: [{start_idx}:{end_idx}]")
+            # start_idx   = (self.frame_num.cond + self.frame_num.pred*i)*self.channels
+            # end_idx     = (self.frame_num.cond + self.frame_num.pred*(i+1))*self.channels
+            # rank_zero_info(f"    predict: [{start_idx}:{end_idx}]")
 
             z_cond      = z_result[:, -self.frame_num.cond*self.channels:]
             z_pred_init = (torch.rand(batch_size, self.frame_num.pred*self.channels, self.image_size, self.image_size)*2-1).to(self.device)
             x_input     = torch.cat([z_cond, z_pred_init], dim=1)
-
+            ts          = torch.full((batch_size,), ddim_steps, device=self.device, dtype=torch.long)
             if ddim:
                 ddim_sampler = DDIMSampler(self)
-                tmp_samples, tmp_intermediates = ddim_sampler.sample(ddim_steps, batch_size, shape, cond, verbose=False, x_T=x_input, log_every_t=50, **kwargs)
-                # print("tmp_samples[:,-self.frame_num.pred*self.channels:]", tmp_samples[:,-self.frame_num.pred*self.channels:].shape)
-                # print("torch.stack(tmp_intermediates['pred_x0'][:,:,-self.frame_num.pred*self.channels:])", torch.stack(tmp_intermediates['pred_x0'])[:,:,-self.frame_num.pred*self.channels:].shape)
+                tmp_samples, tmp_intermediates = ddim_sampler.sample(ddim_steps, batch_size, shape, cond=cond, verbose=False, x_T=x_input, log_every_t=50, **kwargs)
                 z_result = torch.cat([z_result, tmp_samples[:,-self.frame_num.pred*self.channels:]], dim=1)
-                z_intermediates.append(torch.stack(tmp_intermediates['pred_x0'])[:,:,-self.frame_num.pred*self.channels:])
+                z_intermediates.append(torch.stack(tmp_intermediates['pred_x0'])[:,:,-self.frame_num.pred*self.channels:]) # 'pred_x0' is DDIM's predicted x0
             else:
-                tmp_samples, tmp_intermediates = self.sample(cond=cond, batch_size=batch_size,return_intermediates=True, x_T=x_input, **kwargs)
+                tmp_samples, tmp_intermediates = self.sample(cond, shape, batch_size=batch_size, return_intermediates=True, x_T=x_input, verbose=False)
                 z_result = torch.cat([z_result, tmp_samples[:,-self.frame_num.pred*self.channels:]], dim=1)
                 z_intermediates.append(torch.stack(tmp_intermediates)[:,:,-self.frame_num.pred*self.channels:])
         
         z_intermediates = torch.cat(z_intermediates, dim=2)
         z_intermediates = z_intermediates[:,:,:z_intermediates_real.shape[2]]
         z_intermediates = torch.cat([z_intermediates_real, z_intermediates], dim=0)
- 
+
         samples         = z_result
         intermediates   = z_intermediates
 
-        rank_zero_info("sample_log autogression done")
+        # rank_zero_info("sample_log autogression done")
         # print("samples", samples.shape)
         # print("intermediates", intermediates.shape)
         # samples torch.Size([8, 150, 16, 16])
@@ -1562,7 +1598,6 @@ class LatentDiffusion(DDPM):
     @torch.no_grad()
     def progressive_denoising_log(self, cond, batch_size, x_T, shape):
         # x_T [bs, total*ch, h_latent, w_latent]
-        
         z_start = x_T
 
         z_cond = z_start[:, : self.frame_num.cond*self.channels]
@@ -1578,7 +1613,7 @@ class LatentDiffusion(DDPM):
             z_cond      = z_result[:, -self.frame_num.cond*self.channels:]
             z_pred_init = (torch.rand(batch_size, self.frame_num.pred*self.channels, self.image_size, self.image_size)*2-1).to(self.device)
             x_input     = torch.cat([z_cond, z_pred_init], dim=1)
-            tmp_samples, tmp_intermediates = self.progressive_denoising(x_T=x_input, cond=cond, shape=shape,batch_size=batch_size, verbose=False)
+            tmp_samples, tmp_intermediates = self.progressive_denoising(x_T=x_input, cond=cond, shape=shape, batch_size=batch_size, verbose=False)
             z_result = torch.cat([z_result, tmp_samples[:,-self.frame_num.pred*self.channels:]], dim=1)
             z_intermediates.append(torch.stack(tmp_intermediates)[:,:,-self.frame_num.pred*self.channels:])
         
@@ -1589,7 +1624,7 @@ class LatentDiffusion(DDPM):
         samples         = z_result
         intermediates   = z_intermediates
 
-        rank_zero_info("progressive_denoising_log done")
+        # rank_zero_info("progressive_denoising_log done")
         # print("samples", samples.shape)
         # print("intermediates", intermediates.shape)
         # # samples torch.Size([8, 150, 16, 16])
@@ -1599,11 +1634,16 @@ class LatentDiffusion(DDPM):
 
 
     @torch.no_grad()
-    def log_videos(self, batch, N=8, sample=True, ddim_steps=200, ddim_eta=1., return_keys=None,
+    def log_videos(self, batch, N=4, sample=True, ddim_steps=200, ddim_eta=1., return_keys=None,
                    quantize_denoised=True, inpaint=True, plot_denoise_rows=True, plot_progressive_rows=True,
                    plot_diffusion_rows=True, **kwargs):
 
-        use_ddim = ddim_steps is not None
+        if self.parameterization == "eps":
+            use_ddim = True
+        elif self.parameterization == "x0":
+            use_ddim = False
+        else:
+            NotImplementedError()
 
         log = dict()
         z, x, c, x_rec, xc = self.get_input(batch, self.first_stage_key,
@@ -1614,10 +1654,8 @@ class LatentDiffusion(DDPM):
         
         shape = ((self.frame_num.cond+self.frame_num.pred)*self.channels, self.image_size, self.image_size)
 
-        N = min(x.shape[0], N)
-
-        log["inputs"] = x
-        log["reconstruction"] = x_rec
+        log["input"] = x
+        log["recon"] = x_rec
 
         # print(f"z    {z.shape}")
         # print(f"c    {c}")
@@ -1677,64 +1715,47 @@ class LatentDiffusion(DDPM):
 
         # get denoise row
         if sample:
-            with self.ema_scope("Plotting"):
+            with self.ema_scope("Plotting denoise"):
                 tmp_samples, tmp_z_denoise_row = self.sample_log(x_T=z, cond=c, batch_size=N, ddim=use_ddim, ddim_steps=ddim_steps, eta=ddim_eta, shape=shape)
             tmp_samples = tmp_samples.reshape(N, -1, 3, z.shape[-2], z.shape[-1])
             
-            log["latent_z_sample"] = tmp_samples
-            log["latent_z_origin"] = z.reshape(N, -1, 3, z.shape[-2], z.shape[-1])[:,self.frame_num.cond:]
+            log["z_sample"] = tmp_samples
+            log["z_origin"] = z.reshape(N, -1, 3, z.shape[-2], z.shape[-1])
 
             x_samples = []
             for i in range(N):
                 x_samples.append(self.decode_first_stage(tmp_samples[i]))
             x_samples = torch.stack(x_samples) 
-            
-            log["samples"] = x_samples
+            log["ddim200"] = x_samples
             
             if plot_denoise_rows:
                 denoise_grids = self._get_denoise_row(tmp_z_denoise_row)
                 log["ddim200_row"] = denoise_grids
 
-            # if quantize_denoised and not isinstance(self.first_stage_model, AutoencoderKL) and not isinstance(
-            #         self.first_stage_model, IdentityFirstStage):
-            #     # also display when quantizing x0 while sampling
-            #     with self.ema_scope("Plotting Quantized Denoised"):
-            #         samples, z_denoise_row = self.sample_log(cond=c,batch_size=N,ddim=use_ddim,
-            #                                                  ddim_steps=ddim_steps,eta=ddim_eta,
-            #                                                  quantize_denoised=True)
-            #         # samples, z_denoise_row = self.sample(cond=c, batch_size=N, return_intermediates=True,
-            #         #                                      quantize_denoised=True)
-            #     x_samples = self.decode_first_stage(samples.to(self.device))
-            #     log["samples_x0_quantized"] = x_samples
+            if quantize_denoised and not isinstance(self.first_stage_model, AutoencoderKL) and not isinstance(self.first_stage_model, IdentityFirstStage):
+                # also display when quantizing x0 while sampling
+                with self.ema_scope("Plotting Quantized Denoised"):
+                    samples, _ = self.sample_log(cond=c,batch_size=N,ddim=use_ddim,ddim_steps=ddim_steps,eta=ddim_eta,quantize_denoised=True, x_T=z, shape=shape)
+                samples = samples.reshape(N, -1, 3, z.shape[-2], z.shape[-1])
 
-        #     if inpaint:
-        #         # make a simple center square
-        #         b, h, w = z.shape[0], z.shape[2], z.shape[3]
-        #         mask = torch.ones(N, h, w).to(self.device)
-        #         # zeros will be filled in
-        #         mask[:, h // 4:3 * h // 4, w // 4:3 * w // 4] = 0.
-        #         mask = mask[:, None, ...]
-        #         with self.ema_scope("Plotting Inpaint"):
-
-        #             samples, _ = self.sample_log(cond=c,batch_size=N,ddim=use_ddim, eta=ddim_eta,
-        #                                         ddim_steps=ddim_steps, x0=z[:N], mask=mask)
-        #         x_samples = self.decode_first_stage(samples.to(self.device))
-        #         log["samples_inpainting"] = x_samples
-        #         log["mask"] = mask
-
-        #         # outpaint
-        #         with self.ema_scope("Plotting Outpaint"):
-        #             samples, _ = self.sample_log(cond=c, batch_size=N, ddim=use_ddim,eta=ddim_eta,
-        #                                         ddim_steps=ddim_steps, x0=z[:N], mask=mask)
-        #         x_samples = self.decode_first_stage(samples.to(self.device))
-        #         log["samples_outpainting"] = x_samples
+                x_samples = []
+                for i in range(N):
+                    x_samples.append(self.decode_first_stage(samples[i]))
+                x_samples = torch.stack(x_samples) 
+                log["ddim200_quantized"] = x_samples
 
         if plot_progressive_rows:
-            with self.ema_scope("Plotting Progressives"):
-                _, progressives = self.progressive_denoising_log(cond=c, batch_size=N, x_T=z, shape=shape)
+            with self.ema_scope("Plotting Progressives ddpm"):
+                tmp_samples, progressives = self.progressive_denoising_log(cond=c, batch_size=N, x_T=z, shape=shape)
+            samples = samples.reshape(N, -1, 3, z.shape[-2], z.shape[-1])
             prog_row = self._get_denoise_row(progressives, desc="Progressive Generation")
             log["ddpm1000_row"] = prog_row
 
+            x_samples = []
+            for i in range(N):
+                x_samples.append(self.decode_first_stage(samples[i]))
+            x_samples = torch.stack(x_samples) 
+            log["ddpm1000"] = x_samples
 
         # return_keys = None
         if return_keys:
