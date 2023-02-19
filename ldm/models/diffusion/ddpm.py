@@ -1139,7 +1139,7 @@ class LatentDiffusion(DDPM):
             # x_pred = x_start[:, -self.frame_num.pred*self.channels:]    # false !
             
             x_noise    = torch.zeros_like(x_cond) # only for padding, model will inference to it then get loss
-            x_result   = torch.zeros_like(x_cond) # only for padding
+            x_result   = x_cond
             eps_output = torch.zeros_like(x_cond) # only for padding, we get by latent_eps -> latent_z0 -> latent_x0
 
             # like total 50 pred 5 cond 10, we need do ceil[(50-10)/5] = 8 times autogression 
@@ -1151,23 +1151,22 @@ class LatentDiffusion(DDPM):
                 # start_idx   = (self.frame_num.cond + self.frame_num.pred*i)*self.channels
                 # end_idx     = (self.frame_num.cond + self.frame_num.pred*(i+1))*self.channels
                 # rank_zero_info(f"    predict: [{start_idx}:{end_idx}]")
-
                 x_cond      = x_result[:, -self.frame_num.cond*self.channels:]
-                x_pred_init = (torch.rand(x_pred.shape[0], self.frame_num.pred*self.channels, self.image_size, self.image_size)*5-10).to(self.device)
-                x_input     = torch.cat([x_cond, x_pred_init], dim=1)
-                tmp_noise   = default(noise, lambda: torch.randn_like(x_input)).to(self.device)
+                x_pred_init = (torch.rand(x_pred.shape[0], self.frame_num.pred*self.channels, self.image_size, self.image_size)*2-1).to(self.device)
+                tmp_noise   = default(noise, lambda: torch.randn_like(x_pred_init)).to(self.device)
                 # rank_zero_info("    q_sample")
-                x_noisy     = self.q_sample(x_start=x_input, t=t, noise=tmp_noise)
+                x_noisy     = self.q_sample(x_start=x_pred_init, t=t, noise=tmp_noise)
+                x_input     = torch.cat([x_cond, x_noisy], dim=1)
                 # rank_zero_info("    apply_model")
-                tmp_eps_output = self.apply_model(x_noisy, t, cond)
-                x_output    = self.predict_start_from_noise(x_noisy, t=t, noise=tmp_eps_output)
+                tmp_eps_output = self.apply_model(x_input, t, cond)
+                x_output    = self.predict_start_from_noise(x_input, t=t, noise=tmp_eps_output)
 
-                x_noise     = torch.cat([x_noise,    tmp_noise[:, -self.frame_num.pred*self.channels:]],      dim=1)
+                x_noise     = torch.cat([x_noise, tmp_noise], dim=1)
                 eps_output  = torch.cat([eps_output, tmp_eps_output[:, -self.frame_num.pred*self.channels:]], dim=1)
                 x_result    = torch.cat([x_result,   x_output[:, -self.frame_num.pred*self.channels:]],       dim=1)
   
-            eps_output  = eps_output[:, self.frame_num.cond*self.channels:self.frame_num.cond*self.channels+x_pred.shape[1]]        # for getting latent loss
             x_noise     = x_noise   [:, self.frame_num.cond*self.channels:self.frame_num.cond*self.channels+x_pred.shape[1]]        # for getting latent loss
+            eps_output  = eps_output[:, self.frame_num.cond*self.channels:self.frame_num.cond*self.channels+x_pred.shape[1]]        # for getting latent loss
             x_result    = x_result  [:, self.frame_num.cond*self.channels:self.frame_num.cond*self.channels+x_pred.shape[1]]        # true ! for preparing to get pixel loss
             # x_result    = x_result[:, -self.frame_num.pred*self.channels:]                                                        # false !
             
@@ -1254,7 +1253,7 @@ class LatentDiffusion(DDPM):
             x_pred = x_start[:, self.frame_num.cond*self.channels:]       # true !
             # x_pred = x_start[:, -self.frame_num.pred*self.channels:]    # false !
             
-            x_result = torch.zeros_like(x_cond) # only for padding
+            x_result = x_cond
 
             # like total 50 pred 5 cond 10, we need do ceil[(50-10)/5] = 8 times autogression 
             autogression_num = ceil( (x_start.shape[1] - self.frame_num.cond*self.channels) / (self.frame_num.pred*self.channels))  # true  !
@@ -1267,12 +1266,12 @@ class LatentDiffusion(DDPM):
                 # rank_zero_info(f"    predict: [{start_idx}:{end_idx}]")
                 x_cond      = x_result[:, -self.frame_num.cond*self.channels:]
                 x_pred_init = (torch.rand(x_pred.shape[0], self.frame_num.pred*self.channels, self.image_size, self.image_size)*2-1).to(self.device)
-                x_input     = torch.cat([x_cond, x_pred_init], dim=1)
-                tmp_noise   = default(noise, lambda: torch.randn_like(x_input)).to(self.device)
+                tmp_noise   = default(noise, lambda: torch.randn_like(x_pred_init)).to(self.device)
                 # rank_zero_info("    q_sample")
-                x_noisy     = self.q_sample(x_start=x_input, t=t, noise=tmp_noise)
+                x_noisy     = self.q_sample(x_start=x_pred_init, t=t, noise=tmp_noise)
+                x_input     = torch.cat([x_cond, x_noisy], dim=1)
                 # rank_zero_info("    apply_model")
-                x_output    = self.apply_model(x_noisy, t, cond)
+                x_output    = self.apply_model(x_input, t, cond)
                 x_result    = torch.cat([x_result, x_output[:, -self.frame_num.pred*self.channels:]], dim=1)
 
             x_result    = x_result[:, self.frame_num.cond*self.channels:self.frame_num.cond*self.channels+x_pred.shape[1]]          # true !
@@ -1611,6 +1610,7 @@ class LatentDiffusion(DDPM):
 
         for i in range(autogression_num):
             z_cond      = z_result[:, -self.frame_num.cond*self.channels:]
+            
             z_pred_init = (torch.rand(batch_size, self.frame_num.pred*self.channels, self.image_size, self.image_size)*2-1).to(self.device)
             x_input     = torch.cat([z_cond, z_pred_init], dim=1)
             tmp_samples, tmp_intermediates = self.progressive_denoising(x_T=x_input, cond=cond, shape=shape, batch_size=batch_size, verbose=False)
@@ -1634,16 +1634,9 @@ class LatentDiffusion(DDPM):
 
 
     @torch.no_grad()
-    def log_videos(self, batch, N=4, sample=True, ddim_steps=200, ddim_eta=1., return_keys=None,
+    def log_videos(self, batch, N=4, sample=True, ddim_steps=200, ddim_eta=1., return_keys=None,use_ddim = True,
                    quantize_denoised=True, inpaint=True, plot_denoise_rows=True, plot_progressive_rows=True,
                    plot_diffusion_rows=True, **kwargs):
-
-        if self.parameterization == "eps":
-            use_ddim = True
-        elif self.parameterization == "x0":
-            use_ddim = False
-        else:
-            NotImplementedError()
 
         log = dict()
         z, x, c, x_rec, xc = self.get_input(batch, self.first_stage_key,
@@ -1753,7 +1746,7 @@ class LatentDiffusion(DDPM):
 
             x_samples = []
             for i in range(N):
-                x_samples.append(self.decode_first_stage(samples[i]))
+                x_samples.append(self.decode_first_stage(tmp_samples[i]))
             x_samples = torch.stack(x_samples) 
             log["ddpm1000"] = x_samples
 
