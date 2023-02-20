@@ -1135,10 +1135,6 @@ class LatentDiffusion(DDPM):
         z_pred = z_start[:, self.frame_num.cond*self.channels:]       # true !
         # z_pred = z_start[:, -self.frame_num.pred*self.channels:]    # false !
         z_result = z_cond # dont set zerolike tensor, we need it for autogression, not for padding, we get by latent_eps -> latent_z0 -> latent_x0
-        
-        if self.parameterization == "eps":
-            z_noise    = torch.zeros_like(z_cond) # only for padding, model will inference to it then get latent_loss
-            eps_result = torch.zeros_like(z_cond) # only for padding, we get by latent_eps -> latent_z0 -> latent_x0
 
         # like total 50 pred 5 cond 10, we need do ceil[(50-10)/5] = 8 times autogression
         
@@ -1152,17 +1148,18 @@ class LatentDiffusion(DDPM):
             # rank_zero_info(f"    predict: [{start_idx}:{end_idx}]")
             z_cond      = z_result[:, -self.frame_num.cond*self.channels:]
             # TODO: think about how to solve the z_pred_init [(49-10)/5] = 8, we input need padding for it
-            z_pred_init = z_pred[:, start_idx:end_idx]
-            tmp_noise   = default(noise, lambda: torch.randn_like(z_pred_init)).to(self.device)
-            # rank_zero_info("    q_sample")
-            z_noisy     = self.q_sample(x_start=z_pred_init, t=t, noise=tmp_noise)
+            if self.training:
+                z_pred_init = z_pred[:, start_idx:end_idx]
+                tmp_noise   = default(noise, lambda: torch.randn_like(z_pred_init)).to(self.device)
+                # rank_zero_info("    q_sample")
+                z_noisy     = self.q_sample(x_start=z_pred_init, t=t, noise=tmp_noise)
+            else:
+                z_noisy     = (torch.rand(z_start.shape[0], self.frame_num.pred*self.channels, self.image_size, self.image_size)*10-5).to(self.device)
             z_input     = torch.cat([z_cond, z_noisy], dim=1)
             # rank_zero_info("    apply_model")
             if self.parameterization == "eps":
                 tmp_eps_output = self.apply_model(z_input, t, cond)
                 z_output    = self.predict_start_from_noise(z_input, t=t, noise=tmp_eps_output)
-                z_noise     = torch.cat([z_noise, tmp_noise], dim=1)
-                eps_result  = torch.cat([eps_result, tmp_eps_output[:, -self.frame_num.pred*self.channels:]], dim=1)
             else:
                 z_output    = self.apply_model(z_input, t, cond)
             z_result    = torch.cat([z_result, z_output[:, -self.frame_num.pred*self.channels:]], dim=1)
@@ -1175,12 +1172,7 @@ class LatentDiffusion(DDPM):
         z_result        = z_result  [:, self.frame_num.cond*self.channels:self.frame_num.cond*self.channels+z_pred.shape[1]]        # true ! for preparing to get pixel loss
 
         # loss_latent ------------------------------------------------
-        if self.parameterization == "eps":
-            z_noise     = z_noise   [:, self.frame_num.cond*self.channels:self.frame_num.cond*self.channels+z_pred.shape[1]]        # for getting latent loss
-            eps_result  = eps_result[:, self.frame_num.cond*self.channels:self.frame_num.cond*self.channels+z_pred.shape[1]]        # for getting latent loss
-            loss_latent = self.get_loss(eps_result, z_noise, mean=False).sum([1, 2, 3])
-        else:
-            loss_latent = self.get_loss(z_result, z_pred, mean=False).sum([1, 2, 3])
+        loss_latent = self.get_loss(z_result, z_pred, mean=False).sum([1, 2, 3])
         loss_dict.update({f'{prefix}/loss_latent': loss_latent.mean()})
 
         # variational lower bound loss --------------------------------------
@@ -1433,8 +1425,9 @@ class LatentDiffusion(DDPM):
         z_start = x_T
 
         z_cond = z_start[:, :self.frame_num.cond*self.channels]
+        z_pred = z_start[:, self.frame_num.cond*self.channels:]
         
-        z_intermediates_real = z_start[:, self.frame_num.cond*self.channels:].unsqueeze(0)
+        z_intermediates_real = z_pred.unsqueeze(0)
         z_result = z_cond
 
         z_intermediates = []
@@ -1442,13 +1435,13 @@ class LatentDiffusion(DDPM):
         autogression_num = ceil( (z_start.shape[1] - self.frame_num.cond*self.channels) / (self.frame_num.pred*self.channels))
 
         for i in range(autogression_num):
-            # start_idx   = (self.frame_num.cond + self.frame_num.pred*i)*self.channels
-            # end_idx     = (self.frame_num.cond + self.frame_num.pred*(i+1))*self.channels
+            start_idx   = (self.frame_num.cond + self.frame_num.pred*i)*self.channels
+            end_idx     = (self.frame_num.cond + self.frame_num.pred*(i+1))*self.channels
             # rank_zero_info(f"    predict: [{start_idx}:{end_idx}]")
 
             z_cond      = z_result[:, -self.frame_num.cond*self.channels:]
-            z_pred_init = (torch.rand(batch_size, self.frame_num.pred*self.channels, self.image_size, self.image_size)*10-5).to(self.device)
-            x_input     = torch.cat([z_cond, z_pred_init], dim=1)
+            z_noisy     = (torch.rand(z_start.shape[0], self.frame_num.pred*self.channels, self.image_size, self.image_size)*10-5).to(self.device)
+            x_input     = torch.cat([z_cond, z_noisy], dim=1)
             if ddim:
                 ddim_sampler = DDIMSampler(self)
                 tmp_samples, tmp_intermediates = ddim_sampler.sample(ddim_steps, batch_size, shape, cond=cond, verbose=False, x_T=x_input, log_every_t=50, **kwargs)
@@ -1491,8 +1484,8 @@ class LatentDiffusion(DDPM):
         for i in range(autogression_num):
             z_cond      = z_result[:, -self.frame_num.cond*self.channels:]
             
-            z_pred_init = (torch.rand(batch_size, self.frame_num.pred*self.channels, self.image_size, self.image_size)*10-5).to(self.device)
-            x_input     = torch.cat([z_cond, z_pred_init], dim=1)
+            z_noisy     = (torch.rand(z_start.shape[0], self.frame_num.pred*self.channels, self.image_size, self.image_size)*10-5).to(self.device)
+            x_input     = torch.cat([z_cond, z_noisy], dim=1)
             tmp_samples, tmp_intermediates = self.progressive_denoising(x_T=x_input, cond=cond, shape=shape, batch_size=batch_size, verbose=False)
             z_result = torch.cat([z_result, tmp_samples[:,-self.frame_num.pred*self.channels:]], dim=1)
             z_intermediates.append(torch.stack(tmp_intermediates)[:,:,-self.frame_num.pred*self.channels:])
