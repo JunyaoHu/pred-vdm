@@ -473,11 +473,9 @@ class VideoLogger(Callback):
             return True
         return False
 
-    # TODO: for train_batch_end video logger setting
     def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx):
-        # if not self.disabled and (pl_module.global_step > 0 or self.log_first_step):
-        #     self.log_video(pl_module, batch, batch_idx, split="train")
-        pass
+        if not self.disabled and (pl_module.global_step > 0 or self.log_first_step):
+            self.log_video(pl_module, batch, batch_idx, split="train")
 
     def on_validation_batch_end(self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx):
         if not self.disabled and pl_module.global_step > 0:
@@ -884,10 +882,10 @@ if __name__ == "__main__":
 # CUDA_VISIBLE_DEVICES=0,1 python main.py --base configs/latent-diffusion/kth-ldm-vq-f4.yaml --train --gpus 0,1
 
 # [for resume from a checkpoint like]
-# CUDA_VISIBLE_DEVICES=0,1 python main.py --resume logs_training/20230215-081523_kth-ldm-vq-f4 --train --gpus 0,1
+# CUDA_VISIBLE_DEVICES=0,1 python main.py --resume logs_training/20230220-213917_kth-ldm-vq-f4 --train --gpus 0,1
 
 # [for evaluation like] wait for edit
-# CUDA_VISIBLE_DEVICES=0,1 python main.py --resume logs_training/20230215-081523_kth-ldm-vq-f4 --gpus 0,1
+# CUDA_VISIBLE_DEVICES=0,1 python main.py --resume logs_training/20230220-213917_kth-ldm-vq-f4 --gpus 0,1
 
 # 主函数main.py
 # 训练和推理进入到./ldm/models/diffusion/ddpm.py

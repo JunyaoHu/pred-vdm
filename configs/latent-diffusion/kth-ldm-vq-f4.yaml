@@ -2,6 +2,8 @@ model:
   base_learning_rate: 2.0e-06
   target: ldm.models.diffusion.ddpm.LatentDiffusion
   params:
+    # it should be ['x0' or 'eps']
+    parameterization: eps
     linear_start: 0.0015
     linear_end: 0.0195
     num_timesteps_cond: 1
@@ -95,10 +97,9 @@ lightning:
     video_logger:
       target: main.VideoLogger
       params:
-        # we do videologger (save local, and upload wandb) when validation, which step % [batch_frequency] == 0
-        # if you want to output valid video it should be n*traing_step_in_a_epoch
+        # we do videologger (save local, and upload wandb) when training and validation, which step % [batch_frequency] == 0
         # ps: it should run and set it again or estimated it (min batch_frequency = ceil(training dataset / training batchsize / gpus) )
-        batch_frequency: 990 # 198*5
+        batch_frequency: 990 # it means 198 batches in a epoch * 5
         max_videos: 4
         increase_log_steps: False
 
