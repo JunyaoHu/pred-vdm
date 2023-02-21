@@ -4,8 +4,9 @@ model:
   params:
     # it should be ['x0' or 'eps']
     parameterization: eps
-    linear_start: 0.0015
-    linear_end: 0.0195
+    beta_schedule: linear
+    linear_start: 0.0001 # 0.0015
+    linear_end: 0.02 # 0.0195
     num_timesteps_cond: 1
     log_every_t: 200 # log_every_timestep
     timesteps: 1000
@@ -99,7 +100,7 @@ lightning:
       params:
         # we do videologger (save local, and upload wandb) when training and validation, which step % [batch_frequency] == 0
         # ps: it should run and set it again or estimated it (min batch_frequency = ceil(training dataset / training batchsize / gpus) )
-        batch_frequency: 10 # 990 # it means 198 batches in a epoch * 5
+        batch_frequency: 990 # it means 198 batches in a epoch * 5
         max_videos: 4
         increase_log_steps: False
 
