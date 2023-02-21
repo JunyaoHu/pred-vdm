@@ -10,7 +10,66 @@ model:
     num_timesteps_cond: 1
     log_every_t: 200 # log_every_timestep
     timesteps: 1000
+
+    cond_stage_key: class_label
     first_stage_key: video
+
+    # 1. if     caption, coordinates_bbox
+    #               -> batch
+    # 2. elif   class_label
+    #               -> batch[cond_key]
+    # 3. else   image, nix, LR_image, masked_image, segmentation，objects_bbox，depth，bbox_img
+    #               -> super().get_input(batch, cond_key).to(self.device)
+    cond_stage_trainable: false
+    # [None, 'concat', 'crossattn', 'hybrid', 'adm']
+    conditioning_key: crossattn
+
+    # cond_stage_config: __is_first_stage__
+    # cond_stage_config: __is_unconditional__
+
+    # cond_stage_config:
+    #   target: ldm.modules.encoders.modules.ClassEmbedder
+    #   params:
+    #     # nn.Embedding(n_classes, embed_dim) n_classes have embed_dims
+    #     n_classes: 6
+    #     embed_dim: 512
+    #     key: class_label
+
+    # cond_stage_config:
+    #   target: ldm.modules.encoders.modules.BERTEmbedder
+    #   params:
+    #     n_embed: 512
+    #     n_layer: 16
+    #     vocab_size: 8192
+    #     max_seq_len: 92
+    #     use_tokenizer: false
+
+    # cond_stage_config:
+    #   target: torch.nn.Identity
+
+    # cond_stage_config:
+    #   target: ldm.modules.encoders.modules.SpatialRescaler
+    #   params:
+    #     n_stages: 2
+    #     in_channels: 182
+    #     out_channels: 3
+
+    # cond_stage_config:
+    #   target: taming.models.dummy_cond_stage.DummyCondStage
+    #   params:
+    #     conditional_key: objects_bbox
+
+    # cond_stage_config:
+    #   target: taming.modules.misc.coord.CoordStage
+    #   params:
+    #     n_embed: 1024
+    #     down_factor: 16
+
+    # cond_stage_config:
+    #   target: taming.models.dummy_cond_stage.DummyCondStage
+    #   params:
+    #     conditional_key: objects_bbox
+
     image_size: 16
     channels: 3
     frame_num:
@@ -66,7 +125,7 @@ model:
         lossconfig:
           target: torch.nn.Identity
     
-    cond_stage_config: __is_unconditional__
+    
 
 data:
   target: main.DataModuleFromConfig

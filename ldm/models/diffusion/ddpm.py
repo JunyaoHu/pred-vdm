@@ -348,6 +348,7 @@ class DDPM(pl.LightningModule):
         pass
 
     def forward(self, x, *args, **kwargs):
+        rank_zero_info("hello?")
         # b, c, h, w, device, img_size, = *x.shape, x.device, self.image_size
         # assert h == img_size and w == img_size, f'height and width of image must be {img_size}'
         # t = torch.randint(0, self.num_timesteps, (x.shape[0],), device=self.device).long()
@@ -496,8 +497,6 @@ class LatentDiffusion(DDPM):
         if conditioning_key is None:
             conditioning_key = 'concat' if concat_mode else 'crossattn'
         
-        # kth-ldm-vq-f4.yaml cond_stage_config == '__is_unconditional__'
-        # conditioning_key： None
         if cond_stage_config == '__is_unconditional__':
             conditioning_key = None
         ckpt_path = kwargs.pop("ckpt_path", None)
@@ -571,18 +570,16 @@ class LatentDiffusion(DDPM):
             param.requires_grad = False
 
     def instantiate_cond_stage(self, config):
-        # print("config", config)
-        # __is_unconditional__
-        # self.cond_stage_model = None
+        # this way
         if not self.cond_stage_trainable:
             if config == "__is_first_stage__":
                 print("Using first stage also as cond stage.")
                 self.cond_stage_model = self.first_stage_model
             elif config == "__is_unconditional__":
-                # this way
                 print(f"Training {self.__class__.__name__} as an unconditional model.")
                 self.cond_stage_model = None
             else:
+                # TODO: -> this way, make a 光流相关的 model from x
                 model = instantiate_from_config(config)
                 self.cond_stage_model = model.eval()
                 self.cond_stage_model.train = disabled_train
@@ -624,6 +621,7 @@ class LatentDiffusion(DDPM):
 
     def get_learned_conditioning(self, c):
         if self.cond_stage_forward is None:
+            # this way
             if hasattr(self.cond_stage_model, 'encode') and callable(self.cond_stage_model.encode):
                 c = self.cond_stage_model.encode(c)
                 if isinstance(c, DiagonalGaussianDistribution):
@@ -790,7 +788,9 @@ class LatentDiffusion(DDPM):
                 else:
                     xc = super().get_input(batch, cond_key).to(self.device)
             else:
+                # this way
                 xc = x
+
             if not self.cond_stage_trainable or force_c_encode:
                 if isinstance(xc, dict) or isinstance(xc, list):
                     c = self.get_learned_conditioning(xc)
@@ -798,6 +798,7 @@ class LatentDiffusion(DDPM):
                     c = self.get_learned_conditioning(xc.to(self.device))
             else:
                 c = xc
+
             if bs is not None:
                 c = c[:bs]
 
@@ -806,8 +807,6 @@ class LatentDiffusion(DDPM):
                 ckey = __conditioning_keys__[self.model.conditioning_key]
                 c = {ckey: c, 'pos_x': pos_x, 'pos_y': pos_y}
 
-        # self.model.conditioning_key None
-        # self.use_positional_encodings False
         else:
             c = None
             xc = None
@@ -866,6 +865,7 @@ class LatentDiffusion(DDPM):
 
         z = 1. / self.scale_factor * z
 
+        # ignore this we have no this parameter
         if hasattr(self, "split_input_params"):
             if self.split_input_params["patch_distributed_vq"]:
                 ks = self.split_input_params["ks"]  # eg. (128, 128)
@@ -918,6 +918,7 @@ class LatentDiffusion(DDPM):
 
     @torch.no_grad()
     def encode_first_stage(self, x):
+        # ignore this we have no this parameter
         if hasattr(self, "split_input_params"):
             if self.split_input_params["patch_distributed_vq"]:
                 ks = self.split_input_params["ks"]  # eg. (128, 128)
@@ -997,7 +998,7 @@ class LatentDiffusion(DDPM):
     def apply_model(self, x_noisy, t, cond, return_ids=False):
 
         if isinstance(cond, dict):
-            # hybrid case, cond is exptected to be a dict
+            # TODO: hybrid case, cond is exptected to be a dict
             pass
         else:
             if not isinstance(cond, list):
@@ -1005,9 +1006,10 @@ class LatentDiffusion(DDPM):
             key = 'c_concat' if self.model.conditioning_key == 'concat' else 'c_crossattn'
 
             # {'c_crossattn': [None]}
+            # {'c_crossattn': [tensor] }
             cond = {key: cond}
 
-        # False
+        # ignore this we have no this parameter
         if hasattr(self, "split_input_params"):
             assert len(cond) == 1  # todo can only deal with one conditioning atm
             assert not return_ids  
@@ -1628,20 +1630,21 @@ class LatentDiffusion(DDPM):
         xc   None
         """
 
-        if self.model.conditioning_key is not None:
-            if hasattr(self.cond_stage_model, "decode"):
-                xc = self.cond_stage_model.decode(c)
-                log["conditioning"] = xc
-            elif self.cond_stage_key in ["caption"]:
-                xc = log_txt_as_img((x.shape[2], x.shape[3]), batch["caption"])
-                log["conditioning"] = xc
-            elif self.cond_stage_key == 'class_label':
-                xc = log_txt_as_img((x.shape[2], x.shape[3]), batch["human_label"])
-                log['conditioning'] = xc
-            elif isimage(xc):
-                log["conditioning"] = xc
-            if ismap(xc):
-                log["original_conditioning"] = self.to_rgb(xc)
+        # TODO: do it
+        # if self.model.conditioning_key is not None:
+        #     if hasattr(self.cond_stage_model, "decode"):
+        #         xc = self.cond_stage_model.decode(c)
+        #         log["conditioning"] = xc
+        #     elif self.cond_stage_key in ["caption"]:
+        #         xc = log_txt_as_img((x.shape[2], x.shape[3]), batch["caption"])
+        #         log["conditioning"] = xc
+        #     elif self.cond_stage_key == 'class_label':
+        #         xc = log_txt_as_img((x.shape[2], x.shape[3]), batch["human_label"])
+        #         log['conditioning'] = xc
+        #     elif isimage(xc):
+        #         log["conditioning"] = xc
+        #     if ismap(xc):
+        #         log["original_conditioning"] = self.to_rgb(xc)
 
         # plot diffusion add noise process
         if plot_diffusion_rows:
@@ -1756,7 +1759,7 @@ class LatentDiffusion(DDPM):
         x = 2. * (x - x.min()) / (x.max() - x.min()) - 1.
         return x
 
-
+# DiffusionWrapper(unet_config, conditioning_key(crossattn))
 class DiffusionWrapper(pl.LightningModule):
     def __init__(self, diff_model_config, conditioning_key):
         super().__init__()
@@ -1766,11 +1769,11 @@ class DiffusionWrapper(pl.LightningModule):
 
     def forward(self, x, t, c_concat: list = None, c_crossattn: list = None):
         if self.conditioning_key is None:
-            # this way
             out = self.diffusion_model(x, t)
         elif self.conditioning_key == 'concat':
             xc = torch.cat([x] + c_concat, dim=1)
             out = self.diffusion_model(xc, t)
+        # this way, 把crossattn的条件全加，通道数增加
         elif self.conditioning_key == 'crossattn':
             cc = torch.cat(c_crossattn, 1)
             out = self.diffusion_model(x, t, context=cc)

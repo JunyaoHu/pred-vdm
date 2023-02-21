@@ -28,6 +28,7 @@ class ClassEmbedder(nn.Module):
         if key is None:
             key = self.key
         # this is for use in crossattn
+        # TODO: what is this ?
         c = batch[key][:, None]
         c = self.embedding(c)
         return c

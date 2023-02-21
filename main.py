@@ -617,6 +617,10 @@ if __name__ == "__main__":
             name = "_" + cfg_name
         else:
             name = ""
+        if opt.postfix != "":
+            nowname = now + name + "_" + opt.postfix
+        else:
+            nowname = now + name
         # nowname: eg. 20230209-160159_kth-ldm-vq-f4
         nowname = now + name + opt.postfix
         # logdir: eg. ./logs/20230209-160159_kth-ldm-vq-f4
