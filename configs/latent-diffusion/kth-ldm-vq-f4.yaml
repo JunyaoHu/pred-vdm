@@ -10,6 +10,13 @@ model:
     num_timesteps_cond: 1
     log_every_t: 200 # log_every_timestep
     timesteps: 1000
+    
+    scheduler_config: 
+      target: ldm.lr_scheduler.LambdaLinearScheduler
+      params:
+        # 5000 warmup steps
+        warm_up_steps: [5000]
+        f_start: [1.e-6]
 
     cond_stage_key: class_label
     first_stage_key: video
@@ -25,7 +32,7 @@ model:
     conditioning_key: crossattn
 
     # cond_stage_config: __is_first_stage__
-    # cond_stage_config: __is_unconditional__
+    cond_stage_config: __is_unconditional__
 
     # cond_stage_config:
     #   target: ldm.modules.encoders.modules.ClassEmbedder

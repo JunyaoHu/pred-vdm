@@ -35,6 +35,7 @@ from models.fvd.calculate_lpips import calculate_lpips1
 
 import torch.nn.functional as F
 import mediapy as media
+from omegaconf import OmegaConf
 
 
 __conditioning_keys__ = {'concat': 'c_concat',
@@ -1737,9 +1738,21 @@ class LatentDiffusion(DDPM):
             params.append(self.logvar)
         opt = torch.optim.AdamW(params, lr=lr)
         if self.use_scheduler:
+            default_scheduler_cfg = {
+                "target": "ldm.lr_scheduler.LambdaLinearScheduler",
+                "params": {
+                    "warm_up_steps": [10000],
+                    "cycle_lengths": [10000000000000],
+                    "f_start": [1.e-6],
+                    "f_max": [lr],
+                    "f_min": [lr],
+                    "verbosity_interval": -1,
+                }
+            }
             assert 'target' in self.scheduler_config
-            scheduler = instantiate_from_config(self.scheduler_config)
-
+            scheduler_cfg = OmegaConf.merge(default_scheduler_cfg, self.scheduler_config)
+            # instantiate 
+            scheduler = instantiate_from_config(scheduler_cfg)
             print("Setting up LambdaLR scheduler...")
             scheduler = [
                 {
