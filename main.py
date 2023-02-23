@@ -356,7 +356,7 @@ class VideoLogger(Callback):
         pass
 
     @rank_zero_only
-    def _wandb(self, pl_module, videos, batch_idx, split):
+    def _wandb(self, pl_module, videos, metrics, batch_idx, split):
         # for pytorch-lightning > 1.6.0
         tag = f"{split}"
         columns = ["input","recon","z_origin","z_sample","ddim200","ddim200_quantized", "ddpm1000", "diffusion_row", "ddim200_row", "ddpm1000_row"]
@@ -377,14 +377,23 @@ class VideoLogger(Callback):
                 data.append(wandb.Video(grids, fps=20)) #  (batch, time, channel, height width)
         
         data = [data]
-        pl_module.logger.log_table(key=tag, columns=columns, data=data)
+        pl_module.logger.log_table(key=tag, columns=columns, data=data, step=batch_idx)
+        pl_module.logger.log_metrics(metrics, step=batch_idx)
         rank_zero_info("upload wandb done")
             
 
     @rank_zero_only
-    def log_local(self, save_dir, split, videos,
+    def log_local(self, save_dir, split, videos, metrics,
                   global_step, current_epoch, batch_idx):
         rank_zero_info("log local")
+
+        metrics_path = os.path.join(save_dir, f"{split}_metrics.txt")
+        with open(metrics_path, "a") as f:
+            for k in metrics:
+                line = "step-{:06}(epoch-{:06})/batch-{:06}/{}: {}\n".format( global_step, current_epoch, batch_idx, k, metrics[k])
+                f.write(line)
+            f.write("\n")
+        
         root = os.path.join(save_dir, "videos", split)
         # ["inputs" "reconstruction" "diffusion_row" "samples"]
         for k in videos:
@@ -394,31 +403,21 @@ class VideoLogger(Callback):
                     # grid.shape torch.Size([3, 662, 398]) -> h w c
                     # min max tensor(-1.) tensor(1.)
                     if self.rescale:
-                        grid = (grid + 1.0) / 2.0  # -1,1 -> 0,1; c,h,w
-                    filename = "step-{:06}(epoch-{:06})/batch-{:06}/{}/video-{:06}.png".format(
-                        global_step,
-                        current_epoch,
-                        batch_idx,
-                        k,
-                        i)
+                        grid = np.array((grid + 1.0) / 2.0)  # -1,1 -> 0,1; c,h,w
+                    filename = "step-{:06}(epoch-{:06})/batch-{:06}/{}/video-{:06}.png".format( global_step, current_epoch, batch_idx, k, i)
                     path = os.path.join(root, filename)
                     os.makedirs(os.path.split(path)[0], exist_ok=True)
-                    media.write_image(path, grid.numpy())
+                    media.write_image(path, grid)
             elif k in ["input","recon","z_origin","z_sample","ddim200","ddim200_quantized", "ddpm1000"]:
                 for i in range(videos[k].shape[0]):
                     video = einops.rearrange(videos[k][i], "t c h w -> t h w c")
                     if self.rescale:
-                        video = (video + 1.0) / 2.0  # -1,1 -> 0,1; c,h,w
-                    filename = "step-{:06}(epoch-{:06})/batch-{:06}/{}/video-{:06}.gif".format(
-                        global_step,
-                        current_epoch,
-                        batch_idx,
-                        k,
-                        i
-                        )
+                        video = np.array((video + 1.0) / 2.0) # -1,1 -> 0,1; c,h,w
+                    filename = "step-{:06}(epoch-{:06})/batch-{:06}/{}/video-{:06}.gif".format(global_step, current_epoch, batch_idx, k, i)
                     path = os.path.join(root, filename)
                     os.makedirs(os.path.split(path)[0], exist_ok=True)
-                    media.write_video(path, video.numpy(), fps=20, codec='gif')
+                    media.write_video(path, video, fps=20, codec='gif')
+        
         rank_zero_info("log local done")
 
     def log_video(self, pl_module, batch, batch_idx, split="train"):
@@ -441,21 +440,23 @@ class VideoLogger(Callback):
                 pl_module.eval()
 
             with torch.no_grad():
-                videos = pl_module.log_videos(batch, split=split, N=self.max_videos, **self.log_videos_kwargs)
+                videos, metrics = pl_module.log_videos(batch, split=split, **self.log_videos_kwargs)
 
             # key = ["input","recon","z_origin","z_sample","ddim200","ddim200_quantized", "ddpm1000", "diffusion_row", "ddim200_row", "ddpm1000_row"]
             # now, we not have  "samples_inpainting" "mask" "samples_outpainting" 
             for k in videos:
+                N = min(videos[k].shape[0], self.max_videos)
+                videos[k] = videos[k][:N]
                 if isinstance(videos[k], torch.Tensor):
                     videos[k] = videos[k].detach().cpu()
                     if self.clamp:
                         videos[k] = videos[k].clamp(-1., 1.)
 
-            self.log_local(pl_module.logger.save_dir, split, videos,
+            self.log_local(pl_module.logger.save_dir, split, videos, metrics, 
                            pl_module.global_step, pl_module.current_epoch, batch_idx)
 
             logger_log_videos = self.logger_log_videos.get(logger, lambda *args, **kwargs: None)
-            logger_log_videos(pl_module, videos, pl_module.global_step, split)
+            logger_log_videos(pl_module, videos, metrics, pl_module.global_step, split)
 
             if is_train:
                 pl_module.train()
@@ -745,6 +746,7 @@ if __name__ == "__main__":
                     "batch_frequency": 1000,
                     "max_videos": 4,
                     "clamp": True,
+                    "rescale": True,
                 }
             },
             "learning_rate_logger": {

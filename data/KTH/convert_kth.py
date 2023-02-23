@@ -126,7 +126,7 @@ def convert_with_2_splits():
 
 def convert_into_mini_splits(train, valid, test):
     """
-    len train 25535
+    len train 18598
     len valid 256
     len test  256
     min_length train is 15
@@ -147,36 +147,28 @@ def convert_into_mini_splits(train, valid, test):
         print('Converting ' + data_split)
 
         with open(f"./data/KTH/{data_split}-mini.txt", 'w') as f:
-            min_length = 1e6
             split_person_ids = person_ids[data_split]
             for person_id in split_person_ids:
                 # print('     Converting person' + person_id)
                 for action in kth_actions_dict['person'+person_id]:
                     for setting in kth_actions_dict['person'+person_id][action]:
                         for setting in kth_actions_dict['person'+person_id][action]:
+                            for frame_idxs in kth_actions_dict['person'+person_id][action][setting]:
 
-                            if data_split == "train":
-                                
-                                a_list = sorted(kth_actions_dict['person'+person_id][action][setting])
-                                start_frame_idx = a_list[0][0] - 1
-                                end_frames_idx = a_list[-1][1]
+                                file_name = 'person' + person_id + '_' + action + '_' + setting + '_uncomp.avi'
+                                file_path = os.path.join(action, file_name)
+                                start_frame_idx = frame_idxs[0] - 1
+                                end_frames_idx = frame_idxs[1]
+
                                 get_clip_num = (end_frames_idx - start_frame_idx) //  frame_num
+
                                 for i in range(get_clip_num):
                                     file_name = 'person' + person_id + '_' + action + '_' + setting + '_uncomp.avi'
                                     file_path = os.path.join(action, file_name)         
                                     f.write(f"{file_path} {i*frame_num} {(i+1)*frame_num}\n")
                                     count += 1
 
-                            else:
-                                for frame_idxs in kth_actions_dict['person'+person_id][action][setting]:
-                                    file_name = 'person' + person_id + '_' + action + '_' + setting + '_uncomp.avi'
-                                    file_path = os.path.join(action, file_name)
-                                    start_frame_idxs = frame_idxs[0] - 1
-                                    end_frames_idxs = frame_idxs[1]
-
-                                    if frame_num <= end_frames_idxs - start_frame_idxs:
-                                        f.write(f"{file_path} {start_frame_idxs} {start_frame_idxs + frame_num}\n")
-                                        count += 1
+                                    if data_split != "train":
                                         break
                                 
         # make_valid_and_test_as_max256 batches for calculate FVD anb other metrics 

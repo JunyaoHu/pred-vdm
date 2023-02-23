@@ -17,9 +17,11 @@ model:
         # 5000 warmup steps
         warm_up_steps: [5000]
         f_start: [1.e-6]
+        f_max: [1.]
+        f_min: [1.]
 
-    cond_stage_key: class_label
     first_stage_key: video
+    # cond_stage_key: class_label
 
     # 1. if     caption, coordinates_bbox
     #               -> batch
@@ -27,12 +29,18 @@ model:
     #               -> batch[cond_key]
     # 3. else   image, nix, LR_image, masked_image, segmentation，objects_bbox，depth，bbox_img
     #               -> super().get_input(batch, cond_key).to(self.device)
-    cond_stage_trainable: false
+    
+    # cond_stage_trainable: false
     # [None, 'concat', 'crossattn', 'hybrid', 'adm']
-    conditioning_key: crossattn
+    # conditioning_key: crossattn
 
     # cond_stage_config: __is_first_stage__
+
     cond_stage_config: __is_unconditional__
+
+    # cond_stage_config:
+    #   target: models.optical_flow.opticalflow.OpticalFlowEmbedder
+    #   params:
 
     # cond_stage_config:
     #   target: ldm.modules.encoders.modules.ClassEmbedder
@@ -166,7 +174,7 @@ lightning:
       params:
         # we do videologger (save local, and upload wandb) when training and validation, which step % [batch_frequency] == 0
         # ps: it should run and set it again or estimated it (min batch_frequency = ceil(training dataset / training batchsize / gpus) )
-        batch_frequency: 990 # it means 198 batches in a epoch * 5
+        batch_frequency: 730 #730 # it means 146 batches in a epoch * 5
         max_videos: 4
         increase_log_steps: False
 
