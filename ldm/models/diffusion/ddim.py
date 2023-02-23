@@ -75,6 +75,7 @@ class DDIMSampler(object):
                log_every_t=50,
                unconditional_guidance_scale=1.,
                unconditional_conditioning=None,
+               clip_denoised=True,
                # this has to come in the same format as the conditioning, # e.g. as encoded tokens, ...
                **kwargs
                ):
@@ -108,7 +109,8 @@ class DDIMSampler(object):
                                                     log_every_t=log_every_t,
                                                     unconditional_guidance_scale=unconditional_guidance_scale,
                                                     unconditional_conditioning=unconditional_conditioning,
-                                                    verbose=verbose
+                                                    verbose=verbose,
+                                                    clip_denoised=clip_denoised
                                                     )
         return samples, intermediates
 
@@ -118,7 +120,7 @@ class DDIMSampler(object):
                       callback=None, timesteps=None, quantize_denoised=False,
                       mask=None, x0=None, img_callback=None, log_every_t=50,
                       temperature=1., noise_dropout=0., score_corrector=None, corrector_kwargs=None,
-                      unconditional_guidance_scale=1., unconditional_conditioning=None,verbose=True):
+                      unconditional_guidance_scale=1., unconditional_conditioning=None,verbose=True,clip_denoised=True):
         device = self.model.betas.device
         b = shape[0]
         if x_T is None:
@@ -159,13 +161,15 @@ class DDIMSampler(object):
                                       noise_dropout=noise_dropout, score_corrector=score_corrector,
                                       corrector_kwargs=corrector_kwargs,
                                       unconditional_guidance_scale=unconditional_guidance_scale,
-                                      unconditional_conditioning=unconditional_conditioning)
+                                      unconditional_conditioning=unconditional_conditioning,
+                                      clip_denoised=clip_denoised)
             
             if callback: callback(i)
             if img_callback: img_callback(pred_x0, i)
 
             if index % log_every_t == 0 or index == total_steps - 1:
                 rank_zero_info(f"fast_denoising (DDIM) {index}, {log_every_t}")
+                # rank_zero_info(f"-------- x_inter -- min max mean {img.min()} {img.max()} {img.mean()}")
                 intermediates['x_inter'].append(img)
                 intermediates['pred_x0'].append(pred_x0)
 
@@ -174,7 +178,7 @@ class DDIMSampler(object):
     @torch.no_grad()
     def p_sample_ddim(self, x, c, t, index, repeat_noise=False, use_original_steps=False, quantize_denoised=False,
                       temperature=1., noise_dropout=0., score_corrector=None, corrector_kwargs=None,
-                      unconditional_guidance_scale=1., unconditional_conditioning=None):
+                      unconditional_guidance_scale=1., unconditional_conditioning=None, clip_denoised=True):
         b, *_, device = *x.shape, x.device
 
         if self.parameterization == 'eps':
@@ -205,6 +209,11 @@ class DDIMSampler(object):
             pred_x0 = (x - sqrt_one_minus_at * e_t) / a_t.sqrt()
             if quantize_denoised:
                 pred_x0, _, *_ = self.model.first_stage_model.quantize(pred_x0)
+
+            # good trick
+            if clip_denoised:
+                pred_x0 = pred_x0.clamp(-1., 1.)
+
             # direction pointing to x_t
             dir_xt = (1. - a_prev - sigma_t**2).sqrt() * e_t
             noise = sigma_t * noise_like(x.shape, device, repeat_noise) * temperature
@@ -250,6 +259,7 @@ class DDIMSampler(object):
             if noise_dropout > 0.:
                 noise = torch.nn.functional.dropout(noise, p=noise_dropout)
             x_prev = a_prev.sqrt() * pred_x0 + dir_xt + noise
+
             return x_prev, pred_x0
         else:
             NotImplementedError()

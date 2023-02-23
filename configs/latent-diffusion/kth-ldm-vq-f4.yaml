@@ -1,5 +1,5 @@
 model:
-  base_learning_rate: 2.0e-06
+  base_learning_rate: 2e-06
   target: ldm.models.diffusion.ddpm.LatentDiffusion
   params:
     # it should be ['x0' or 'eps']
@@ -10,6 +10,8 @@ model:
     num_timesteps_cond: 1
     log_every_t: 200 # log_every_timestep
     timesteps: 1000
+    scale_factor: 0.2
+    clip_denoised: True
     
     scheduler_config: 
       target: ldm.lr_scheduler.LambdaLinearScheduler

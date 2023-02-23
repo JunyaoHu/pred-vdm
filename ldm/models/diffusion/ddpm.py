@@ -157,16 +157,13 @@ class DDPM(pl.LightningModule):
         self.register_buffer('sqrt_recipm1_alphas_cumprod', to_torch(np.sqrt(1. / alphas_cumprod - 1)))
 
         # calculations for posterior q(x_{t-1} | x_t, x_0)
-        posterior_variance = (1 - self.v_posterior) * betas * (1. - alphas_cumprod_prev) / (
-                    1. - alphas_cumprod) + self.v_posterior * betas
+        posterior_variance = (1 - self.v_posterior) * betas * (1. - alphas_cumprod_prev) / (1. - alphas_cumprod) + self.v_posterior * betas
         # above: equal to 1. / (1. / (1. - alpha_cumprod_tm1) + alpha_t / beta_t)
         self.register_buffer('posterior_variance', to_torch(posterior_variance))
         # below: log calculation clipped because the posterior variance is 0 at the beginning of the diffusion chain
         self.register_buffer('posterior_log_variance_clipped', to_torch(np.log(np.maximum(posterior_variance, 1e-20))))
-        self.register_buffer('posterior_mean_coef1', to_torch(
-            betas * np.sqrt(alphas_cumprod_prev) / (1. - alphas_cumprod)))
-        self.register_buffer('posterior_mean_coef2', to_torch(
-            (1. - alphas_cumprod_prev) * np.sqrt(alphas) / (1. - alphas_cumprod)))
+        self.register_buffer('posterior_mean_coef1', to_torch(betas * np.sqrt(alphas_cumprod_prev) / (1. - alphas_cumprod)))
+        self.register_buffer('posterior_mean_coef2', to_torch((1. - alphas_cumprod_prev) * np.sqrt(alphas) / (1. - alphas_cumprod)))
 
         if self.parameterization == "eps":
             lvlb_weights = self.betas ** 2 / (2 * self.posterior_variance * to_torch(alphas) * (1 - self.alphas_cumprod))
@@ -191,8 +188,8 @@ class DDPM(pl.LightningModule):
         finally:
             if self.use_ema:
                 self.model_ema.restore(self.model.parameters())
-                # if context is not None:
-                #     rank_zero_info(f"{context}: Restored training weights")
+                if context is not None:
+                    rank_zero_info(f"{context}: Restored training weights")
 
     def init_from_ckpt(self, path, ignore_keys=list(), only_model=False):
         sd = torch.load(path, map_location="cpu")
@@ -347,7 +344,6 @@ class DDPM(pl.LightningModule):
         pass
 
     def forward(self, x, *args, **kwargs):
-        rank_zero_info("hello?")
         # b, c, h, w, device, img_size, = *x.shape, x.device, self.image_size
         # assert h == img_size and w == img_size, f'height and width of image must be {img_size}'
         # t = torch.randint(0, self.num_timesteps, (x.shape[0],), device=self.device).long()
@@ -389,9 +385,9 @@ class DDPM(pl.LightningModule):
     
     @torch.no_grad()
     def validation_step(self, batch, batch_idx):
-        rank_zero_info("validation_step: no EMA")
+        rank_zero_info("Validation_step: no EMA")
         _, loss_dict_no_ema = self.shared_step(batch)
-        with self.ema_scope("validation_step"):
+        with self.ema_scope("validation_step: "):
             _, loss_dict_ema = self.shared_step(batch)
             loss_dict_ema = {key + '_ema': loss_dict_ema[key] for key in loss_dict_ema}
         self.log_dict(loss_dict_no_ema, prog_bar=False, logger=True, on_step=False, on_epoch=True, sync_dist=True)
@@ -400,7 +396,7 @@ class DDPM(pl.LightningModule):
     def test_step(self, batch, batch_idx):
         rank_zero_info("Test_step: no EMA")
         _, loss_dict_no_ema = self.shared_step(batch)
-        with self.ema_scope("test_step"):
+        with self.ema_scope("Test_step: "):
             _, loss_dict_ema = self.shared_step(batch)
             loss_dict_ema = {key + '_ema': loss_dict_ema[key] for key in loss_dict_ema}
         self.log_dict(loss_dict_no_ema, prog_bar=False, logger=True, on_step=False, on_epoch=True, sync_dist=True)
@@ -515,7 +511,6 @@ class LatentDiffusion(DDPM):
         self.instantiate_first_stage(first_stage_config)
         self.instantiate_cond_stage(cond_stage_config)
         self.cond_stage_forward = cond_stage_forward
-        self.clip_denoised = False
         self.bbox_tokenizer = None  
 
         self.restarted_from_ckpt = False
@@ -536,19 +531,22 @@ class LatentDiffusion(DDPM):
     @torch.no_grad()
     def on_train_batch_start(self, batch, batch_idx):
         # only for very first batch
-        # if self.scale_by_std and self.current_epoch == 0 and self.global_step == 0 and batch_idx == 0 and not self.restarted_from_ckpt:
-        #     assert self.scale_factor == 1., 'rather not use custom rescaling and std-rescaling simultaneously'
-        #     # set rescale weight to 1./std of encodings
-        #     print("### USING STD-RESCALING ###")
-        #     x = super().get_input(batch, self.first_stage_key)
-        #     x = x.to(self.device)
-        #     encoder_posterior = self.encode_first_stage(x)
-        #     z = self.get_first_stage_encoding(encoder_posterior).detach()
-        #     del self.scale_factor
-        #     self.register_buffer('scale_factor', 1. / z.flatten().std())
-        #     print(f"setting self.scale_factor to {self.scale_factor}")
-        #     print("### USING STD-RESCALING ###")
-        pass
+        if self.scale_by_std and self.current_epoch == 0 and self.global_step == 0 and batch_idx == 0 and not self.restarted_from_ckpt:
+            assert self.scale_factor == 1., 'rather not use custom rescaling and std-rescaling simultaneously'
+            # set rescale weight to 1./std of encodings
+            print("### USING STD-RESCALING ###")
+            x = super().get_input(batch, self.first_stage_key)
+            x = x.to(self.device)
+            encoder_posterior = []
+            for i in range(len(x)):
+                encoder_posterior.append(self.encode_first_stage(x[i]))
+            encoder_posterior = torch.stack(encoder_posterior)
+            encoder_posterior = rearrange(encoder_posterior, 'b t c h w -> b (t c) h w')
+            z = self.get_first_stage_encoding(encoder_posterior).detach()
+            del self.scale_factor
+            self.register_buffer('scale_factor', 1. / z.flatten().std())
+            print(f"setting self.scale_factor to {self.scale_factor}")
+            print("### USING STD-RESCALING ###")
 
     def register_schedule(self,
                           given_betas=None, beta_schedule="linear", timesteps=1000,
@@ -749,7 +747,6 @@ class LatentDiffusion(DDPM):
         z = torch.stack(z)
 
         # rank_zero_info(f"z {z.shape}")
-        # rank_zero_info(f"min max mean {torch.min(z)} {torch.max(z)} {torch.mean(z)}")
 
         z = self.get_first_stage_encoding(z).detach()
         z = rearrange(z, 'b t c h w -> b (t c) h w')
@@ -973,14 +970,14 @@ class LatentDiffusion(DDPM):
         t = torch.randint(0, self.num_timesteps, (z.shape[0],), device=self.device).long()
         
         # self.model.conditioning_key: None
-        # if self.model.conditioning_key is not None:
-        #     assert c is not None
-        #     if self.cond_stage_trainable:
-        #         c = self.get_learned_conditioning(c)
+        if self.model.conditioning_key is not None:
+            assert c is not None
+            if self.cond_stage_trainable:
+                c = self.get_learned_conditioning(c)
             # false
-            # if self.shorten_cond_schedule:  # TODO: drop this option
-            #     tc = self.cond_ids[t].to(self.device)
-            #     c = self.q_sample(x_start=c, t=tc, noise=torch.randn_like(c.float()))
+            if self.shorten_cond_schedule:  # TODO: drop this option
+                tc = self.cond_ids[t].to(self.device)
+                c = self.q_sample(x_start=c, t=tc, noise=torch.randn_like(c.float()))
         
         return self.p_losses(z, c, t, *args, **kwargs)
 
@@ -1150,12 +1147,16 @@ class LatentDiffusion(DDPM):
                 z_cond      = z_result[:, -self.frame_num.cond*self.channels:]
                 # TODO: think about how to solve the z_pred_init [(49-10)/5] = 8, we input need padding for it
                 z_pred_init = z_pred[:, start_idx:end_idx]
+                # rank_zero_info(f"z_pred_init     min max mean {z_pred_init.min()} {z_pred_init.max()} {z_pred_init.mean()}")
                 tmp_noise   = default(noise, lambda: torch.randn_like(z_pred_init)).to(self.device)
+                # rank_zero_info(f"tmp_noise       min max mean {tmp_noise.min()} {tmp_noise.max()} {tmp_noise.mean()}")
                 # rank_zero_info("    q_sample")
                 z_noisy     = self.q_sample(x_start=z_pred_init, t=t, noise=tmp_noise)
+                # rank_zero_info(f"z_noisy         min max mean {z_noisy.min()} {z_noisy.max()} {z_noisy.mean()}")
                 z_input     = torch.cat([z_cond, z_noisy], dim=1)
                 # rank_zero_info("    apply_model")
                 tmp_eps_output = self.apply_model(z_input, t, cond)[:, -self.frame_num.pred*self.channels:]
+                # rank_zero_info(f"tmp_eps_output  min max mean {tmp_eps_output.min()} {tmp_eps_output.max()} {tmp_eps_output.mean()}")
                 z_noise     = torch.cat([z_noise,    tmp_noise]     , dim=1)
                 eps_result  = torch.cat([eps_result, tmp_eps_output], dim=1)
 
@@ -1266,7 +1267,7 @@ class LatentDiffusion(DDPM):
             raise NotImplementedError()
 
         if clip_denoised:
-            x_recon.clamp_(-1., 1.)
+            x_recon.clamp(-1., 1.)
         if quantize_denoised:
             x_recon, _, [_, _, indices] = self.first_stage_model.quantize(x_recon)
         model_mean, posterior_variance, posterior_log_variance = self.q_posterior(x_start=x_recon, x_t=x, t=t)
@@ -1278,7 +1279,7 @@ class LatentDiffusion(DDPM):
             return model_mean, posterior_variance, posterior_log_variance
 
     @torch.no_grad()
-    def p_sample(self, x, c, t, clip_denoised=False, repeat_noise=False,
+    def p_sample(self, x, c, t, clip_denoised=True, repeat_noise=False,
                  return_codebook_ids=False, quantize_denoised=False, return_x0=False,
                  temperature=1., noise_dropout=0., score_corrector=None, corrector_kwargs=None):
         b, *_, device = *x.shape, x.device
@@ -1421,6 +1422,7 @@ class LatentDiffusion(DDPM):
 
             if i % log_every_t == 0 or i == timesteps - 1:
                 rank_zero_info(f"sample_log p_sample (DDPM) {i} {log_every_t}")
+                # rank_zero_info(f"---------- video -- min max mean {video.min()} {video.max()} {video.mean()}")
                 intermediates.append(video)
         if return_intermediates:
             return video, intermediates
@@ -1456,6 +1458,8 @@ class LatentDiffusion(DDPM):
         z_intermediates_real = z_pred.unsqueeze(0)
         z_result = z_cond
 
+        # rank_zero_info(f"---------- z_result 01 -- min max mean {z_result.min()} {z_result.max()} {z_result.mean()}")
+
         z_intermediates = []
 
         autogression_num = ceil( (z_start.shape[1] - self.frame_num.cond*self.channels) / (self.frame_num.pred*self.channels))
@@ -1463,11 +1467,14 @@ class LatentDiffusion(DDPM):
         for i in range(autogression_num):
             z_cond      = z_result[:, -self.frame_num.cond*self.channels:]
             z_noisy     = torch.randn(z_start.shape[0], self.frame_num.pred*self.channels, self.image_size, self.image_size).to(self.device)
+            # rank_zero_info(f"-------------- z_noisy -- min max mean {z_noisy.min()} {z_noisy.max()} {z_noisy.mean()}")
             x_input     = torch.cat([z_cond, z_noisy], dim=1)
             if ddim:
                 ddim_sampler = DDIMSampler(self)
-                tmp_samples, tmp_intermediates = ddim_sampler.sample(ddim_steps, batch_size, shape, cond=cond, verbose=False, x_T=x_input, log_every_t=50, **kwargs)
+                tmp_samples, tmp_intermediates = ddim_sampler.sample(ddim_steps, batch_size, shape, cond=cond, verbose=False, x_T=x_input, log_every_t=50, clip_denoised=self.clip_denoised, **kwargs)
+                # rank_zero_info(f"-------- tmp_samples[] -- min max mean {tmp_samples[:,-self.frame_num.pred*self.channels:].min()} {tmp_samples[:,-self.frame_num.pred*self.channels:].max()} {tmp_samples[:,-self.frame_num.pred*self.channels:].mean()}")
                 z_result = torch.cat([z_result, tmp_samples[:,-self.frame_num.pred*self.channels:]], dim=1)
+                # rank_zero_info(f"---------- z_result 02 -- min max mean {z_result.min()} {z_result.max()} {z_result.mean()}")
                 z_intermediates.append(torch.stack(tmp_intermediates['x_inter'])[:,:,-self.frame_num.pred*self.channels:]) # 'pred_x0' is DDIM's predicted x0
             else:
                 tmp_samples, tmp_intermediates = self.sample(cond, shape, batch_size=batch_size, return_intermediates=True, x_T=x_input, verbose=False)
@@ -1545,7 +1552,9 @@ class LatentDiffusion(DDPM):
         shape = ((self.frame_num.cond+self.frame_num.pred)*self.channels, self.image_size, self.image_size)
 
         log["input"] = x
+        # rank_zero_info(f"-------------------- x -- min max mean {x.min()} {x.max()} {x.mean()}")
         log["recon"] = x_rec
+        # rank_zero_info(f"---------------- x_rec -- min max mean {x_rec.min()} {x_rec.max()} {x_rec.mean()}")
 
         # print(f"z    {z.shape}")
         # print(f"c    {c}")
@@ -1606,9 +1615,12 @@ class LatentDiffusion(DDPM):
 
         # get denoise row
         if sample:
+            # rank_zero_info(f"-------------------- z -- min max mean {z.min()} {z.max()} {z.mean()}")
             with self.ema_scope("Plotting denoise"):
                 tmp_samples, tmp_z_denoise_row = self.sample_log(x_T=z, cond=c, batch_size=N, ddim=use_ddim, ddim_steps=ddim_steps, eta=ddim_eta, shape=shape)
             tmp_samples = tmp_samples.reshape(N, -1, 3, z.shape[-2], z.shape[-1])
+
+            # rank_zero_info(f"---------- tmp_samples -- min max mean {tmp_samples.min()} {tmp_samples.max()} {tmp_samples.mean()}")
             
             log["z_sample"] = tmp_samples
             log["z_origin"] = z.reshape(N, -1, 3, z.shape[-2], z.shape[-1])
@@ -1616,7 +1628,8 @@ class LatentDiffusion(DDPM):
             x_samples = []
             for i in range(N):
                 x_samples.append(self.decode_first_stage(tmp_samples[i]))
-            x_samples = torch.stack(x_samples) 
+            x_samples = torch.stack(x_samples)
+            # rank_zero_info(f"------------ x_samples -- min max mean {x_samples.min()} {x_samples.max()} {x_samples.mean()}")
             log["ddim200"] = x_samples
 
             videos1 = (x_samples[:,self.frame_num.cond:]+1.)/2.
