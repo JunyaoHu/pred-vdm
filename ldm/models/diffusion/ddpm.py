@@ -36,6 +36,7 @@ from models.fvd.calculate_lpips import calculate_lpips1
 import torch.nn.functional as F
 import mediapy as media
 from omegaconf import OmegaConf
+import time
 
 
 __conditioning_keys__ = {'concat': 'c_concat',
@@ -69,14 +70,15 @@ class DDPM(pl.LightningModule):
                  image_size=256,
                  channels=3,
                  log_every_t=100,
-                 clip_denoised=True,
+                 clip_denoised=False,
                  linear_start=1e-4,
                  linear_end=2e-2,
                  cosine_s=8e-3,
                  given_betas=None,
                  v_posterior=0.,  # weight for choosing posterior variance as sigma = (1-v) * beta_tilde + v * beta
-                 original_elbo_weight=0.2,
-                 l_latent_weight=0.8,
+                 original_elbo_weight=0.1,
+                 l_eps_weight=0.6,
+                 l_z0_weight=0.3,
                  conditioning_key=None,
                  parameterization="eps",  # all assuming fixed variance schedules
                  scheduler_config=None,
@@ -108,7 +110,8 @@ class DDPM(pl.LightningModule):
 
         self.v_posterior = v_posterior
         self.original_elbo_weight = original_elbo_weight
-        self.l_latent_weight = l_latent_weight
+        self.l_eps_weight = l_eps_weight
+        self.l_z0_weight = l_z0_weight
 
         if monitor is not None:
             self.monitor = monitor
@@ -252,7 +255,7 @@ class DDPM(pl.LightningModule):
         pass
 
     @torch.no_grad()
-    def p_sample(self, x, t, clip_denoised=True, repeat_noise=False):
+    def p_sample(self, x, t, clip_denoised=False, repeat_noise=False):
         # b, *_, device = *x.shape, x.device
         # model_mean, _, model_log_variance = self.p_mean_variance(x=x, t=t, clip_denoised=clip_denoised)
         # noise = noise_like(x.shape, device, repeat_noise)
@@ -724,9 +727,9 @@ class LatentDiffusion(DDPM):
                   cond_key=None, return_original_cond=False, bs=None):
         # key = "video" to get video batch x
         # batch:
-        #   [b, t, c, h_origin, w_origin] -> [b, self.frame_num.(cond+pred), self.channels, h_origin, w_origin]
+        #   [b, t, c, h_origin, w_origin] -> [b, self.frame_num.train_valid_total, self.channels, h_origin, w_origin]
         # x:
-        #   [b, (cond+pred), c, h_origin, w_origin]
+        #   [b, train_valid_total, c, h_origin, w_origin]
 
         x = super().get_input(batch, key)
         if bs is not None:
@@ -830,12 +833,13 @@ class LatentDiffusion(DDPM):
             x_rec (prepare for output)
             """
             # rank_zero_info("get input decode")
+            x_rec = None
             tmp_z = z.reshape(batch_size, -1, self.channels, self.image_size, self.image_size)
             x_rec = []
             for i in range(batch_size):
                 x_rec.append(self.decode_first_stage(tmp_z[i]))
             x_rec = torch.stack(x_rec)
-            del tmp_z
+            # rank_zero_info(f"x_rec           min max mean {x_rec.min()} {x_rec.max()} {x_rec.mean()}")
             # rank_zero_info("get input decode done")
             # x_rec torch.Size([8, 15, 3, 64, 64])
             # print("x_rec", x_rec.shape)
@@ -844,7 +848,7 @@ class LatentDiffusion(DDPM):
         if return_original_cond:
             out.append(xc)
         
-        # z: latent [b, self.frame_num.total*self.frame_num.total, h_latent, h_latent]
+        # z: latent [b, self.frame_num.train_valid_total*channels, h_latent, h_latent]
         # x_rec：reconstruction of x (x -- Encode --> z -- Decode --> xrec)
         # xc: original_cond when cond_key (wait for research)
         # out: [z, c] + [x, x_rec] + [xc]
@@ -908,9 +912,13 @@ class LatentDiffusion(DDPM):
 
         else:
             if isinstance(self.first_stage_model, VQModelInterface):
-                return self.first_stage_model.decode(z, force_not_quantize=predict_cids or force_not_quantize)
+                result = self.first_stage_model.decode(z, force_not_quantize=predict_cids or force_not_quantize)
+                result = ((result - result.min()) / (result.max() - result.min()))*2.-1.
+                return result
             else:
-                return self.first_stage_model.decode(z)
+                result = self.first_stage_model.decode(z)
+                result = ((result - result.min()) / (result.max() - result.min()))*2.-1.
+                return result
 
     @torch.no_grad()
     def encode_first_stage(self, x):
@@ -965,7 +973,7 @@ class LatentDiffusion(DDPM):
     def forward(self, z, c, *args, **kwargs):
         # z: 
         #   latent 
-        #   [b, self.frame_num.total*self.frame_num.total, h_latent, h_latent]
+        #   [b, self.frame_num.train_valid_total*self.frame_num.channels, h_latent, h_latent]
 
         t = torch.randint(0, self.num_timesteps, (z.shape[0],), device=self.device).long()
         
@@ -1136,15 +1144,14 @@ class LatentDiffusion(DDPM):
             z_noise    = torch.zeros_like(z_cond) # only for padding, model will inference to it then get latent_loss
             eps_result = torch.zeros_like(z_cond) # only for padding, we get by latent_eps -> latent_z0 -> latent_x0total 50 pred 5 cond 10, we need do ceil[(50-10)/5] = 8 times autogression
             
-            autogression_num = ceil( (z_start.shape[1] - self.frame_num.cond*self.channels) / (self.frame_num.pred*self.channels))  # true  !
-            # autogression_num = ceil( (self.frame_num.total - self.frame_num.cond) / self.frame_num.pred)                          # false !
-
+            autogression_num = ceil( (z_start.shape[1]/self.channels - self.frame_num.cond) / self.frame_num.pred)
+            
             # rank_zero_info(f"p_losses start predicting {autogression_num} times") 
             for i in range(autogression_num):
                 start_idx   = self.frame_num.pred*i*self.channels
                 end_idx     = self.frame_num.pred*(i+1)*self.channels
                 # rank_zero_info(f"    predict: [{start_idx}:{end_idx}]")
-                z_cond      = z_result[:, -self.frame_num.cond*self.channels:]
+                z_cond      = z_result[:, -self.frame_num.cond*self.channels:].clamp(-1.,1.)
                 # TODO: think about how to solve the z_pred_init [(49-10)/5] = 8, we input need padding for it
                 z_pred_init = z_pred[:, start_idx:end_idx]
                 # rank_zero_info(f"z_pred_init     min max mean {z_pred_init.min()} {z_pred_init.max()} {z_pred_init.mean()}")
@@ -1156,9 +1163,11 @@ class LatentDiffusion(DDPM):
                 z_input     = torch.cat([z_cond, z_noisy], dim=1)
                 # rank_zero_info("    apply_model")
                 tmp_eps_output = self.apply_model(z_input, t, cond)[:, -self.frame_num.pred*self.channels:]
+                z_output    = self.predict_start_from_noise(z_input[:, -self.frame_num.pred*self.channels:], t=t, noise=tmp_eps_output)
                 # rank_zero_info(f"tmp_eps_output  min max mean {tmp_eps_output.min()} {tmp_eps_output.max()} {tmp_eps_output.mean()}")
                 z_noise     = torch.cat([z_noise,    tmp_noise]     , dim=1)
                 eps_result  = torch.cat([eps_result, tmp_eps_output], dim=1)
+                z_result    = torch.cat([z_result,   z_output]      , dim=1)
 
             # rank_zero_info("p_losses predicting autogression done")
             
@@ -1167,13 +1176,18 @@ class LatentDiffusion(DDPM):
 
             z_noise     = z_noise   [:, self.frame_num.cond*self.channels:self.frame_num.cond*self.channels+z_pred.shape[1]]        # for getting latent loss
             eps_result  = eps_result[:, self.frame_num.cond*self.channels:self.frame_num.cond*self.channels+z_pred.shape[1]]        # for getting latent loss
+            z_result    = z_result  [:, self.frame_num.cond*self.channels:self.frame_num.cond*self.channels+z_pred.shape[1]] # true ! for preparing to get pixel loss
 
-            # loss_latent ------------------------------------------------
-            loss_latent = self.get_loss(eps_result, z_noise, mean=False).sum([1, 2, 3])
-            loss_dict.update({f'{prefix}/loss_latent': loss_latent.mean()})
+            # loss_latent (eps) ------------------------------------------------
+            loss_eps = self.get_loss(eps_result, z_noise, mean=False).sum([1, 2, 3])
+            loss_dict.update({f'{prefix}/loss_eps': loss_eps.mean()})
+
+            # loss_latent (z0) ------------------------------------------------
+            loss_z0 = self.get_loss(z_result, z_pred, mean=False).sum([1, 2, 3])
+            loss_dict.update({f'{prefix}/loss_z0': loss_z0.mean()})
 
             # variational lower bound loss --------------------------------------
-            loss_vlb = (self.lvlb_weights[t] * loss_latent).mean()
+            loss_vlb = (self.lvlb_weights[t] * loss_eps).mean()
             loss_dict.update({f'{prefix}/loss_vlb': loss_vlb})
 
             # if self.learn_logvar:
@@ -1185,65 +1199,65 @@ class LatentDiffusion(DDPM):
             #     loss = self.l_simple_weight * loss_gamma.mean() + self.original_elbo_weight * loss_vlb
 
             # loss_sum -------------------------------------------------------
-            loss = self.l_latent_weight * loss_latent.mean() + self.original_elbo_weight * loss_vlb
+            loss = self.l_eps_weight * loss_eps.mean() +self.l_z0_weight * loss_z0.mean() + self.original_elbo_weight * loss_vlb
             loss_dict.update({f'{prefix}/loss': loss})
 
             return loss, loss_dict
         
-        elif self.parameterization == "x0":
-            # we set different length for train and val\test, so ...
-            z_cond = z_start[:, : self.frame_num.cond*self.channels]
-            z_pred = z_start[:, self.frame_num.cond*self.channels:]       # true !
-            # z_pred = z_start[:, -self.frame_num.pred*self.channels:]    # false !
-            z_result = z_cond # dont set zerolike tensor, we need it for autogression, not for padding, we get by latent_eps -> latent_z0 -> latent_x0
+        # # TODO: x0?
+        # elif self.parameterization == "x0":
+        #     # we set different length for train and val\test, so ...
+        #     z_cond = z_start[:, : self.frame_num.cond*self.channels]
+        #     z_pred = z_start[:, self.frame_num.cond*self.channels:]       # true !
+        #     # z_pred = z_start[:, -self.frame_num.pred*self.channels:]    # false !
+        #     z_result = z_cond # dont set zerolike tensor, we need it for autogression, not for padding, we get by latent_eps -> latent_z0 -> latent_x0
             
-            autogression_num = ceil( (z_start.shape[1] - self.frame_num.cond*self.channels) / (self.frame_num.pred*self.channels))  # true  !
-            # autogression_num = ceil( (self.frame_num.total - self.frame_num.cond) / self.frame_num.pred)                          # false !
+        #     autogression_num = ceil( (z_start.shape[1]/self.channels - self.frame_num.cond) / self.frame_num.pred)
 
-            # rank_zero_info(f"p_losses start predicting {autogression_num} times") 
-            for i in range(autogression_num):
-                start_idx   = self.frame_num.pred*i*self.channels
-                end_idx     = self.frame_num.pred*(i+1)*self.channels
-                # rank_zero_info(f"    predict: [{start_idx}:{end_idx}]")
-                z_cond      = z_result[:, -self.frame_num.cond*self.channels:]
-                # TODO: think about how to solve the z_pred_init [(49-10)/5] = 8, we input need padding for it
-                z_pred_init = z_pred[:, start_idx:end_idx] 
-                tmp_noise   = default(noise, lambda: torch.randn_like(z_pred_init)).to(self.device)
-                # rank_zero_info("    q_sample")
-                z_noisy     = self.q_sample(x_start=z_pred_init, t=t, noise=tmp_noise)
-                z_input     = torch.cat([z_cond, z_noisy], dim=1)
-                # rank_zero_info("    apply_model")
-                z_output    = self.apply_model(z_input, t, cond)
-                z_result    = torch.cat([z_result, z_output[:, -self.frame_num.pred*self.channels:]], dim=1)
+        #     # rank_zero_info(f"p_losses start predicting {autogression_num} times") 
+        #     for i in range(autogression_num):
+        #         start_idx   = self.frame_num.pred*i*self.channels
+        #         end_idx     = self.frame_num.pred*(i+1)*self.channels
+        #         # rank_zero_info(f"    predict: [{start_idx}:{end_idx}]")
+        #         z_cond      = z_result[:, -self.frame_num.cond*self.channels:]
+        #         # TODO: think about how to solve the z_pred_init [(49-10)/5] = 8, we input need padding for it
+        #         z_pred_init = z_pred[:, start_idx:end_idx] 
+        #         tmp_noise   = default(noise, lambda: torch.randn_like(z_pred_init)).to(self.device)
+        #         # rank_zero_info("    q_sample")
+        #         z_noisy     = self.q_sample(x_start=z_pred_init, t=t, noise=tmp_noise)
+        #         z_input     = torch.cat([z_cond, z_noisy], dim=1)
+        #         # rank_zero_info("    apply_model")
+        #         z_output    = self.apply_model(z_input, t, cond)
+        #         z_result    = torch.cat([z_result, z_output[:, -self.frame_num.pred*self.channels:]], dim=1)
 
-            # rank_zero_info("p_losses predicting autogression done")
+        #     # rank_zero_info("p_losses predicting autogression done")
             
-            loss_dict = {}
-            prefix = 'train' if self.training else 'val'
+        #     loss_dict = {}
+        #     prefix = 'train' if self.training else 'val'
 
-            z_result        = z_result  [:, self.frame_num.cond*self.channels:self.frame_num.cond*self.channels+z_pred.shape[1]]        # true ! for preparing to get pixel loss
+        #     z_result        = z_result  [:, self.frame_num.cond*self.channels:self.frame_num.cond*self.channels+z_pred.shape[1]]        # true ! for preparing to get pixel loss
 
-            # loss_latent ------------------------------------------------
-            loss_latent = self.get_loss(z_result, z_pred, mean=False).sum([1, 2, 3])
-            loss_dict.update({f'{prefix}/loss_latent': loss_latent.mean()})
+        #     # loss_latent ------------------------------------------------
+        #     loss_eps = self.get_loss(z_result, z_pred, mean=False).sum([1, 2, 3])
+        #     loss_dict.update({f'{prefix}/loss_latent': loss_eps.mean()})
 
-            # variational lower bound loss --------------------------------------
-            loss_vlb = (self.lvlb_weights[t] * loss_latent).mean()
-            loss_dict.update({f'{prefix}/loss_vlb': loss_vlb})
+        #     # variational lower bound loss --------------------------------------
+        #     loss_vlb = (self.lvlb_weights[t] * loss_eps).mean()
+        #     loss_dict.update({f'{prefix}/loss_vlb': loss_vlb})
 
-            # if self.learn_logvar:
-            #     logvar_t = self.logvar[t].to(self.device)
-            #     loss_gamma = loss_simple_latent / torch.exp(logvar_t) + logvar_t
-            #     # loss = loss_simple / torch.exp(self.logvar) + self.logvar
-            #     loss_dict.update({f'{prefix}/loss_gamma': loss_gamma.mean()})
-            #     loss_dict.update({'logvar': self.logvar.data.mean()})
-            #     loss = self.l_simple_weight * loss_gamma.mean() + self.original_elbo_weight * loss_vlb
+        #     # if self.learn_logvar:
+        #     #     logvar_t = self.logvar[t].to(self.device)
+        #     #     loss_gamma = loss_simple_latent / torch.exp(logvar_t) + logvar_t
+        #     #     # loss = loss_simple / torch.exp(self.logvar) + self.logvar
+        #     #     loss_dict.update({f'{prefix}/loss_gamma': loss_gamma.mean()})
+        #     #     loss_dict.update({'logvar': self.logvar.data.mean()})
+        #     #     loss = self.l_simple_weight * loss_gamma.mean() + self.original_elbo_weight * loss_vlb
 
-            # loss_sum -------------------------------------------------------
-            loss = self.l_latent_weight * loss_latent.mean() + self.original_elbo_weight * loss_vlb
-            loss_dict.update({f'{prefix}/loss': loss})
+        #     # loss_sum -------------------------------------------------------
+        #     loss = self.l_eps_weight * loss_eps.mean() + self.original_elbo_weight * loss_vlb
+        #     loss_dict.update({f'{prefix}/loss': loss})
 
-            return loss, loss_dict
+        #     return loss, loss_dict
         else:
             NotImplementedError()
 
@@ -1265,9 +1279,8 @@ class LatentDiffusion(DDPM):
             x_recon = model_out
         else:
             raise NotImplementedError()
-
         if clip_denoised:
-            x_recon.clamp(-1., 1.)
+            x_recon = x_recon.clamp(-1., 1.)
         if quantize_denoised:
             x_recon, _, [_, _, indices] = self.first_stage_model.quantize(x_recon)
         model_mean, posterior_variance, posterior_log_variance = self.q_posterior(x_start=x_recon, x_t=x, t=t)
@@ -1279,7 +1292,7 @@ class LatentDiffusion(DDPM):
             return model_mean, posterior_variance, posterior_log_variance
 
     @torch.no_grad()
-    def p_sample(self, x, c, t, clip_denoised=True, repeat_noise=False,
+    def p_sample(self, x, c, t, clip_denoised=False, repeat_noise=False,
                  return_codebook_ids=False, quantize_denoised=False, return_x0=False,
                  temperature=1., noise_dropout=0., score_corrector=None, corrector_kwargs=None):
         b, *_, device = *x.shape, x.device
@@ -1369,6 +1382,7 @@ class LatentDiffusion(DDPM):
             
             if i % log_every_t == 0 or i == timesteps - 1:
                 rank_zero_info(f"progressive_denoising (DDPM) {i} {log_every_t}")
+                # rank_zero_info(f"-------- video-- -- min max mean {video.min()} {video.max()} {video.mean()}")
                 intermediates.append(x0_partial)
         return video, intermediates
 
@@ -1458,23 +1472,18 @@ class LatentDiffusion(DDPM):
         z_intermediates_real = z_pred.unsqueeze(0)
         z_result = z_cond
 
-        # rank_zero_info(f"---------- z_result 01 -- min max mean {z_result.min()} {z_result.max()} {z_result.mean()}")
-
         z_intermediates = []
 
-        autogression_num = ceil( (z_start.shape[1] - self.frame_num.cond*self.channels) / (self.frame_num.pred*self.channels))
+        autogression_num = ceil( (z_start.shape[1]/self.channels - self.frame_num.cond) / self.frame_num.pred)
 
         for i in range(autogression_num):
             z_cond      = z_result[:, -self.frame_num.cond*self.channels:]
             z_noisy     = torch.randn(z_start.shape[0], self.frame_num.pred*self.channels, self.image_size, self.image_size).to(self.device)
-            # rank_zero_info(f"-------------- z_noisy -- min max mean {z_noisy.min()} {z_noisy.max()} {z_noisy.mean()}")
             x_input     = torch.cat([z_cond, z_noisy], dim=1)
             if ddim:
                 ddim_sampler = DDIMSampler(self)
                 tmp_samples, tmp_intermediates = ddim_sampler.sample(ddim_steps, batch_size, shape, cond=cond, verbose=False, x_T=x_input, log_every_t=50, clip_denoised=self.clip_denoised, **kwargs)
-                # rank_zero_info(f"-------- tmp_samples[] -- min max mean {tmp_samples[:,-self.frame_num.pred*self.channels:].min()} {tmp_samples[:,-self.frame_num.pred*self.channels:].max()} {tmp_samples[:,-self.frame_num.pred*self.channels:].mean()}")
                 z_result = torch.cat([z_result, tmp_samples[:,-self.frame_num.pred*self.channels:]], dim=1)
-                # rank_zero_info(f"---------- z_result 02 -- min max mean {z_result.min()} {z_result.max()} {z_result.mean()}")
                 z_intermediates.append(torch.stack(tmp_intermediates['x_inter'])[:,:,-self.frame_num.pred*self.channels:]) # 'pred_x0' is DDIM's predicted x0
             else:
                 tmp_samples, tmp_intermediates = self.sample(cond, shape, batch_size=batch_size, return_intermediates=True, x_T=x_input, verbose=False)
@@ -1509,7 +1518,7 @@ class LatentDiffusion(DDPM):
 
         z_intermediates = []
 
-        autogression_num = ceil( (z_start.shape[1] - self.frame_num.cond*self.channels) / (self.frame_num.pred*self.channels))
+        autogression_num = ceil( (z_start.shape[1]/self.channels - self.frame_num.cond) / self.frame_num.pred)
 
         for i in range(autogression_num):
             z_cond      = z_result[:, -self.frame_num.cond*self.channels:]
@@ -1605,7 +1614,7 @@ class LatentDiffusion(DDPM):
                         diffusion_grid.append(self.decode_first_stage(z_noisy))
 
                 # n_log_step, n_row, C, H, W
-                diffusion_grid = torch.stack(diffusion_grid)  
+                diffusion_grid = torch.stack(diffusion_grid)
                 diffusion_grid = rearrange(diffusion_grid, 'n b c h w -> (n b) c h w')
                 diffusion_grid = make_grid(diffusion_grid, nrow=n_row)
                 log["diffusion_row"].append(diffusion_grid)
@@ -1616,30 +1625,33 @@ class LatentDiffusion(DDPM):
         # get denoise row
         if sample:
             # rank_zero_info(f"-------------------- z -- min max mean {z.min()} {z.max()} {z.mean()}")
+            start_time = time.time()
             with self.ema_scope("Plotting denoise"):
                 tmp_samples, tmp_z_denoise_row = self.sample_log(x_T=z, cond=c, batch_size=N, ddim=use_ddim, ddim_steps=ddim_steps, eta=ddim_eta, shape=shape)
             tmp_samples = tmp_samples.reshape(N, -1, 3, z.shape[-2], z.shape[-1])
 
             # rank_zero_info(f"---------- tmp_samples -- min max mean {tmp_samples.min()} {tmp_samples.max()} {tmp_samples.mean()}")
-            
             log["z_sample"] = tmp_samples
             log["z_origin"] = z.reshape(N, -1, 3, z.shape[-2], z.shape[-1])
+
+            log_metrics[f'{split}/z0_min'] = tmp_samples.min() 
+            log_metrics[f'{split}/z0_max'] = tmp_samples.max() 
 
             x_samples = []
             for i in range(N):
                 x_samples.append(self.decode_first_stage(tmp_samples[i]))
             x_samples = torch.stack(x_samples)
-            # rank_zero_info(f"------------ x_samples -- min max mean {x_samples.min()} {x_samples.max()} {x_samples.mean()}")
+            # rank_zero_info(f"------- ddim x_samples -- min max mean {x_samples.min()} {x_samples.max()} {x_samples.mean()}")
             log["ddim200"] = x_samples
+
+            autogression_num = ceil( (x_samples.shape[1] - self.frame_num.cond) / self.frame_num.pred)
+            log_metrics[f"{split}/used_time_per_autogression"] = (start_time - time.time()) / autogression_num
 
             videos1 = (x_samples[:,self.frame_num.cond:]+1.)/2.
             videos2 = (x        [:,self.frame_num.cond:]+1.)/2.
-            log_metrics[f'{split}/loss (without clamp)'] = self.get_loss(videos1, videos2, mean=False).sum([1, 2, 3, 4]).mean()
-            log_metrics[f'{split}/pixel_min'] = videos1.min() 
-            log_metrics[f'{split}/pixel_max'] = videos1.max() 
             videos1 = videos1.clamp(0.,1.)
             videos2 = videos2.clamp(0.,1.)
-            log_metrics[f'{split}/loss (with clamp)'] = self.get_loss(videos1, videos2, mean=False).sum([1, 2, 3, 4]).mean()
+            log_metrics[f'{split}/pixel mse'] = self.get_loss(videos1, videos2, mean=False).sum([1, 2, 3, 4]).mean()
 
             if videos1.shape[1] >= 10: 
                 fvd = calculate_fvd1(videos1, videos2, self.device)
@@ -1660,30 +1672,34 @@ class LatentDiffusion(DDPM):
                 denoise_grids = self._get_denoise_row(tmp_z_denoise_row)
                 log["ddim200_row"] = denoise_grids
 
-            if quantize_denoised and not isinstance(self.first_stage_model, AutoencoderKL) and not isinstance(self.first_stage_model, IdentityFirstStage):
-                # also display when quantizing x0 while sampling
-                with self.ema_scope("Plotting Quantized Denoised"):
-                    samples, _ = self.sample_log(cond=c,batch_size=N,ddim=use_ddim,ddim_steps=ddim_steps,eta=ddim_eta,quantize_denoised=True, x_T=z, shape=shape)
-                samples = samples.reshape(N, -1, 3, z.shape[-2], z.shape[-1])
+            # if quantize_denoised and not isinstance(self.first_stage_model, AutoencoderKL) and not isinstance(self.first_stage_model, IdentityFirstStage):
+            #     # also display when quantizing x0 while sampling
+            #     with self.ema_scope("Plotting Quantized Denoised"):
+            #         samples, _ = self.sample_log(cond=c,batch_size=N,ddim=use_ddim,ddim_steps=ddim_steps,eta=ddim_eta,quantize_denoised=True, x_T=z, shape=shape)
+            #     samples = samples.reshape(N, -1, 3, z.shape[-2], z.shape[-1])
 
-                x_samples = []
-                for i in range(N):
-                    x_samples.append(self.decode_first_stage(samples[i]))
-                x_samples = torch.stack(x_samples) 
-                log["ddim200_quantized"] = x_samples
+            #     x_samples = []
+            #     for i in range(N):
+            #         x_samples.append(self.decode_first_stage(samples[i]))
+            #     x_samples = torch.stack(x_samples) 
+            #     # rank_zero_info(f"----- q ddim x_samples -- min max mean {x_samples.min()} {x_samples.max()} {x_samples.mean()}")
+            #     log["ddim200_quantized"] = x_samples
 
-        if plot_progressive_rows:
-            with self.ema_scope("Plotting Progressives ddpm"):
-                tmp_samples, progressives = self.progressive_denoising_log(cond=c, batch_size=N, x_T=z, shape=shape)
-            tmp_samples = tmp_samples.reshape(N, -1, 3, z.shape[-2], z.shape[-1])
-            prog_row = self._get_denoise_row(progressives, desc="Progressive Generation")
-            log["ddpm1000_row"] = prog_row
+        # if plot_progressive_rows:
+        #     with self.ema_scope("Plotting Progressives ddpm"):
+        #         tmp_samples, progressives = self.progressive_denoising_log(cond=c, batch_size=N, x_T=z, shape=shape)
+        #     tmp_samples = tmp_samples.reshape(N, -1, 3, z.shape[-2], z.shape[-1])
+        #     prog_row = self._get_denoise_row(progressives, desc="Progressive Generation")
+        #     log["ddpm1000_row"] = prog_row
 
-            x_samples = []
-            for i in range(N):
-                x_samples.append(self.decode_first_stage(tmp_samples[i]))
-            x_samples = torch.stack(x_samples) 
-            log["ddpm1000"] = x_samples
+        #     x_samples = []
+        #     for i in range(N):
+        #         x_samples.append(self.decode_first_stage(tmp_samples[i]))
+        #     x_samples = torch.stack(x_samples) 
+        #     log["ddpm1000"] = x_samples
+
+            # rank_zero_info(f"------- ddpm x_samples -- min max mean {x_samples.min()} {x_samples.max()} {x_samples.mean()}")
+            
 
         # return_keys = None
         if return_keys:

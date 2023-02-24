@@ -359,26 +359,27 @@ class VideoLogger(Callback):
     def _wandb(self, pl_module, videos, metrics, batch_idx, split):
         # for pytorch-lightning > 1.6.0
         tag = f"{split}"
-        columns = ["input","recon","z_origin","z_sample","ddim200","ddim200_quantized", "ddpm1000", "diffusion_row", "ddim200_row", "ddpm1000_row"]
+        # columns = ["input","recon","z_origin","z_sample","ddim200","ddim200_quantized", "ddpm1000", "diffusion_row", "ddim200_row", "ddpm1000_row"]
+        columns = ["input", "recon", "z_origin", "z_sample", "ddim200", "diffusion_row", "ddim200_row"]
         data = []
         rank_zero_info("upload wandb")
         for k in columns:
-            if k in ["diffusion_row", "ddim200_row", "ddpm1000_row"]:
+            if k in ["diffusion_row", "ddim200_row"]:
                 grids = einops.rearrange(videos[k], "b c h w -> b h w c")
                 if self.rescale:
                     grids = np.array(((grids + 1.0) * 127.5)).astype(np.uint8)  # -1,1 -> 0,255; h,w,c -> uint8
                 grids = list([wandb.Image(i) for i in grids])
                 data.append(grids)
 
-            elif k in ["input","recon","z_origin","z_sample","ddim200","ddim200_quantized", "ddpm1000"]:
+            elif k in ["input","recon","z_origin","z_sample","ddim200"]:
                 grids = videos[k]
                 if self.rescale:
                     grids = np.array(((grids + 1.0) * 127.5)).astype(np.uint8) 
                 data.append(wandb.Video(grids, fps=20)) #  (batch, time, channel, height width)
         
         data = [data]
-        pl_module.logger.log_table(key=tag, columns=columns, data=data, step=batch_idx)
-        pl_module.logger.log_metrics(metrics, step=batch_idx)
+        pl_module.logger.log_table(key=tag, columns=columns, data=data)
+        pl_module.logger.log_metrics(metrics)
         rank_zero_info("upload wandb done")
             
 
@@ -395,20 +396,19 @@ class VideoLogger(Callback):
             f.write("\n")
         
         root = os.path.join(save_dir, "videos", split)
-        # ["inputs" "reconstruction" "diffusion_row" "samples"]
         for k in videos:
-            if k in ["diffusion_row", "ddim200_row", "ddpm1000_row"]:
+            # if k in ["diffusion_row", "ddim200_row", "ddpm1000_row"]:
+            if k in ["diffusion_row", "ddim200_row"]:
                 for i in range(videos[k].shape[0]):
                     grid = einops.rearrange(videos[k][i], "c h w -> h w c")
-                    # grid.shape torch.Size([3, 662, 398]) -> h w c
-                    # min max tensor(-1.) tensor(1.)
                     if self.rescale:
                         grid = np.array((grid + 1.0) / 2.0)  # -1,1 -> 0,1; c,h,w
                     filename = "step-{:06}(epoch-{:06})/batch-{:06}/{}/video-{:06}.png".format( global_step, current_epoch, batch_idx, k, i)
                     path = os.path.join(root, filename)
                     os.makedirs(os.path.split(path)[0], exist_ok=True)
                     media.write_image(path, grid)
-            elif k in ["input","recon","z_origin","z_sample","ddim200","ddim200_quantized", "ddpm1000"]:
+            # elif k in ["input","recon","z_origin","z_sample","ddim200","ddim200_quantized", "ddpm1000"]:
+            elif k in ["input","recon","z_origin","z_sample","ddim200"]:
                 for i in range(videos[k].shape[0]):
                     video = einops.rearrange(videos[k][i], "t c h w -> t h w c")
                     if self.rescale:
@@ -442,8 +442,8 @@ class VideoLogger(Callback):
             with torch.no_grad():
                 videos, metrics = pl_module.log_videos(batch, split=split, **self.log_videos_kwargs)
 
-            # key = ["input","recon","z_origin","z_sample","ddim200","ddim200_quantized", "ddpm1000", "diffusion_row", "ddim200_row", "ddpm1000_row"]
-            # now, we not have  "samples_inpainting" "mask" "samples_outpainting" 
+            # key = ["input","recon","z_origin","z_sample","ddim200", "diffusion_row", "ddim200_row"]
+            # now, we not have  "samples_inpainting" "mask" "samples_outpainting" ,"ddim200_quantized", "ddpm1000","ddpm1000_row"
             for k in videos:
                 N = min(videos[k].shape[0], self.max_videos)
                 videos[k] = videos[k][:N]
@@ -475,8 +475,8 @@ class VideoLogger(Callback):
         return False
 
     def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx):
-        if not self.disabled and (pl_module.global_step > 0 or self.log_first_step):
-            self.log_video(pl_module, batch, batch_idx, split="train")
+        # if not self.disabled and (pl_module.global_step > 0 or self.log_first_step):
+        #     self.log_video(pl_module, batch, batch_idx, split="train")
         pass
 
     def on_validation_batch_end(self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx):

@@ -127,10 +127,10 @@ def convert_with_2_splits():
 def convert_into_mini_splits(train, valid, test):
     """
     len train 18598
-    len valid 256
+    len valid 100
     len test  256
     min_length train is 15
-    min_length valid is 20
+    min_length valid is 30
     min_length test is 50
     """
     for data_split in ['train', 'valid', 'test']:
@@ -172,7 +172,17 @@ def convert_into_mini_splits(train, valid, test):
                                         break
                                 
         # make_valid_and_test_as_max256 batches for calculate FVD anb other metrics 
-        if data_split != "train" and count > 256:
+        if data_split == "valid" and count > 100:
+            import random
+            random.seed(2023)     
+            with open(f"./data/KTH/{data_split}-mini.txt", 'r') as f:
+                lines = f.readlines()
+            lines = random.sample(lines, 100)
+            count = 100
+            with open(f"./data/KTH/{data_split}-mini.txt", 'w') as f:
+                f.writelines(lines)
+
+        if data_split == "test" and count > 256:
             import random
             random.seed(2023)     
             with open(f"./data/KTH/{data_split}-mini.txt", 'r') as f:
@@ -181,10 +191,11 @@ def convert_into_mini_splits(train, valid, test):
             count = 256
             with open(f"./data/KTH/{data_split}-mini.txt", 'w') as f:
                 f.writelines(lines)
+
         print(f"count is {count}")
     print("")
 
 # convert_with_official_split()
 # convert_with_all_frames()
 # convert_with_2_splits()
-convert_into_mini_splits(15,20,50)
+convert_into_mini_splits(15,30,50)

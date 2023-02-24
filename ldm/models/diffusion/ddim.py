@@ -75,7 +75,7 @@ class DDIMSampler(object):
                log_every_t=50,
                unconditional_guidance_scale=1.,
                unconditional_conditioning=None,
-               clip_denoised=True,
+               clip_denoised=False,
                # this has to come in the same format as the conditioning, # e.g. as encoded tokens, ...
                **kwargs
                ):
@@ -120,7 +120,7 @@ class DDIMSampler(object):
                       callback=None, timesteps=None, quantize_denoised=False,
                       mask=None, x0=None, img_callback=None, log_every_t=50,
                       temperature=1., noise_dropout=0., score_corrector=None, corrector_kwargs=None,
-                      unconditional_guidance_scale=1., unconditional_conditioning=None,verbose=True,clip_denoised=True):
+                      unconditional_guidance_scale=1., unconditional_conditioning=None,verbose=True,clip_denoised=False):
         device = self.model.betas.device
         b = shape[0]
         if x_T is None:
@@ -178,7 +178,7 @@ class DDIMSampler(object):
     @torch.no_grad()
     def p_sample_ddim(self, x, c, t, index, repeat_noise=False, use_original_steps=False, quantize_denoised=False,
                       temperature=1., noise_dropout=0., score_corrector=None, corrector_kwargs=None,
-                      unconditional_guidance_scale=1., unconditional_conditioning=None, clip_denoised=True):
+                      unconditional_guidance_scale=1., unconditional_conditioning=None, clip_denoised=False):
         b, *_, device = *x.shape, x.device
 
         if self.parameterization == 'eps':
