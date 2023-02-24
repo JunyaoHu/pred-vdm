@@ -178,7 +178,7 @@ lightning:
       params:
         # we do videologger (save local, and upload wandb) when training and validation, which step % [batch_frequency] == 0
         # ps: it should run and set it again or estimated it (min batch_frequency = ceil(training dataset / training batchsize / gpus) )
-        batch_frequency: 535 #535 # it means 107 batches in a epoch * 5
+        batch_frequency: 730 #535 # it means 146 batches in a epoch * 5
         max_videos: 4
         increase_log_steps: False
 
