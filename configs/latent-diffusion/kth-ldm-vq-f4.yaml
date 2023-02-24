@@ -91,7 +91,7 @@ model:
     channels: 3
     frame_num:
       train_total: 15
-      valid_total: 30
+      valid_total: 20
       test_total: 50
       cond: 10
       pred: 5
@@ -151,7 +151,7 @@ data:
   params:
     batch_size: 
       train: 64
-      validation: 256
+      validation: 100
       test: 256
     num_workers: 8
     wrap: false
@@ -178,7 +178,7 @@ lightning:
       params:
         # we do videologger (save local, and upload wandb) when training and validation, which step % [batch_frequency] == 0
         # ps: it should run and set it again or estimated it (min batch_frequency = ceil(training dataset / training batchsize / gpus) )
-        batch_frequency: 730 #535 # it means 146 batches in a epoch * 5
+        batch_frequency: 730 # it means 146 batches in a epoch * 5
         max_videos: 4
         increase_log_steps: False
 
