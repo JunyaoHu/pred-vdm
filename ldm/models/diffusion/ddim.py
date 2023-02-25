@@ -168,8 +168,8 @@ class DDIMSampler(object):
             if img_callback: img_callback(pred_x0, i)
 
             if index % log_every_t == 0 or index == total_steps - 1:
-                rank_zero_info(f"fast_denoising (DDIM) {index}, {log_every_t}")
-                # rank_zero_info(f"-------- x_inter -- min max mean {img.min()} {img.max()} {img.mean()}")
+                # rank_zero_info(f"fast_denoising (DDIM) {index}, {log_every_t}")
+                rank_zero_info(f"fast_denoising (DDIM) {index:4}, {log_every_t:4} -------- x_inter -- min max mean {img.min():.4} {img.max():.4} {img.mean():.4}")
                 intermediates['x_inter'].append(img)
                 intermediates['pred_x0'].append(pred_x0)
 

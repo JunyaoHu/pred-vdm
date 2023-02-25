@@ -13,14 +13,14 @@ model:
     scale_factor: 0.2
     clip_denoised: True
     
-    scheduler_config: 
-      target: ldm.lr_scheduler.LambdaLinearScheduler
-      params:
-        # 2000 warmup steps
-        warm_up_steps: [2000]
-        f_start: [1.e-6]
-        f_max: [1.]
-        f_min: [1.]
+    # scheduler_config: 
+    #   target: ldm.lr_scheduler.LambdaLinearScheduler
+    #   params:
+    #     # 2000 warmup steps
+    #     warm_up_steps: [2000]
+    #     f_start: [1.e-6]
+    #     f_max: [1.]
+    #     f_min: [1.]
 
     first_stage_key: video
     # cond_stage_key: class_label
@@ -88,11 +88,9 @@ model:
     #     conditional_key: objects_bbox
 
     image_size: 16
+    VQ_batch_size: 256
     channels: 3
     frame_num:
-      train_total: 15
-      valid_total: 20
-      test_total: 50
       cond: 10
       pred: 5
     monitor: val/loss_ema
@@ -101,6 +99,7 @@ model:
       target: ldm.modules.diffusionmodules.openaimodel.UNetModel
       params:
         dims: 2
+
         image_size: 16
         in_channels: 45
         out_channels: 45
@@ -178,7 +177,7 @@ lightning:
       params:
         # we do videologger (save local, and upload wandb) when training and validation, which step % [batch_frequency] == 0
         # ps: it should run and set it again or estimated it (min batch_frequency = ceil(training dataset / training batchsize / gpus) )
-        batch_frequency: 730 # it means 146 batches in a epoch * 5
+        batch_frequency: 146 # 730 # it means 146 batches in a epoch * 5
         max_videos: 4
         increase_log_steps: False
 

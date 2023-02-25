@@ -13,7 +13,7 @@ def convert_with_official_split():
     for data_split in ['train', 'valid', 'test']:
         print('Converting ' + data_split)
 
-        with open(f"./data/KTH/{data_split}-official.txt", 'w') as f:
+        with open(f"{data_split}-official.txt", 'w') as f:
             min_length = 1e6
             split_person_ids = person_ids[data_split]
             for person_id in split_person_ids:
@@ -49,7 +49,7 @@ def convert_with_all_frames():
     for data_split in ['train', 'valid', 'test']:
         print('Converting ' + data_split)
 
-        with open(f"./data/KTH/{data_split}.txt", 'w') as f:
+        with open(f"{data_split}.txt", 'w') as f:
             min_length = 1e6
             split_person_ids = person_ids[data_split]
             for person_id in split_person_ids:
@@ -87,7 +87,7 @@ def convert_with_2_splits():
     for data_split in ['train', 'valid', 'test']:
         print('Converting ' + data_split)
 
-        with open(f"./data/KTH/{data_split}-2splits.txt", 'w') as f:
+        with open(f"{data_split}-2splits.txt", 'w') as f:
             min_length = 1e6
             split_person_ids = person_ids[data_split]
             for person_id in split_person_ids:
@@ -146,7 +146,7 @@ def convert_into_mini_splits(train, valid, test):
         
         print('Converting ' + data_split)
 
-        with open(f"./data/KTH/{data_split}-mini.txt", 'w') as f:
+        with open(f"{data_split}-mini.txt", 'w') as f:
             split_person_ids = person_ids[data_split]
             for person_id in split_person_ids:
                 # print('     Converting person' + person_id)
@@ -175,27 +175,27 @@ def convert_into_mini_splits(train, valid, test):
         if data_split == "valid" and count > 100:
             import random
             random.seed(2023)     
-            with open(f"./data/KTH/{data_split}-mini.txt", 'r') as f:
+            with open(f"{data_split}-mini.txt", 'r') as f:
                 lines = f.readlines()
             lines = random.sample(lines, 100)
             count = 100
-            with open(f"./data/KTH/{data_split}-mini.txt", 'w') as f:
+            with open(f"{data_split}-mini.txt", 'w') as f:
                 f.writelines(lines)
 
         if data_split == "test" and count > 256:
             import random
             random.seed(2023)     
-            with open(f"./data/KTH/{data_split}-mini.txt", 'r') as f:
+            with open(f"{data_split}-mini.txt", 'r') as f:
                 lines = f.readlines()
             lines = random.sample(lines, 256)
             count = 256
-            with open(f"./data/KTH/{data_split}-mini.txt", 'w') as f:
+            with open(f"{data_split}-mini.txt", 'w') as f:
                 f.writelines(lines)
 
         print(f"count is {count}")
     print("")
 
 # convert_with_official_split()
-# convert_with_all_frames()
+convert_with_all_frames()
 # convert_with_2_splits()
-convert_into_mini_splits(15,30,50)
+# convert_into_mini_splits(15,30,50)
