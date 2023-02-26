@@ -155,19 +155,19 @@ data:
     num_workers: 8
     wrap: false
     train:
-      target: taming.data.mydataset.KTH
+      target: data.mydataset.KTH
       params:
-        type: train
+        data_dir: ./data/KTH/processed/train
         size: 64
     validation:
-      target: taming.data.mydataset.KTH
+      target: data.mydataset.KTH
       params:
-        type: valid
+        data_dir: ./data/KTH/processed/valid
         size: 64
     test:
-      target: taming.data.mydataset.KTH
+      target: data.mydataset.KTH
       params:
-        type: test
+        data_dir: ./data/KTH/processed/test
         size: 64
 
 lightning:
