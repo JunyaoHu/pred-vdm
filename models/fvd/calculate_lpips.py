@@ -49,8 +49,8 @@ def calculate_lpips(videos1, videos2, calculate_per_frame, calculate_final, devi
             # img [timestamps[x], channel, h, w]
             # img [channel, h, w] tensor
 
-            img1 = video1[clip_timestamp].unsqueeze(0).cuda()
-            img2 = video2[clip_timestamp].unsqueeze(0).cuda()
+            img1 = video1[clip_timestamp].unsqueeze(0).to(device)
+            img2 = video2[clip_timestamp].unsqueeze(0).to(device)
             
             loss_fn.to(device)
 
@@ -112,6 +112,7 @@ def main():
     videos1 = torch.zeros(NUMBER_OF_VIDEOS, VIDEO_LENGTH, CHANNEL, SIZE, SIZE, requires_grad=False)
     videos2 = torch.ones(NUMBER_OF_VIDEOS, VIDEO_LENGTH, CHANNEL, SIZE, SIZE, requires_grad=False)
     device = torch.device("cuda")
+    # device = torch.device("cpu")
 
     import json
     result = calculate_lpips(videos1, videos2, CALCULATE_PER_FRAME, CALCULATE_FINAL, device)

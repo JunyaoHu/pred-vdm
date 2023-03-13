@@ -32,8 +32,8 @@ i3D_WEIGHTS_URL = "https://www.dropbox.com/s/ge9e5ujwgetktms/i3d_torchscript.pt"
 def load_i3d_pretrained(device):
     filepath = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'i3d_torchscript.pt')
     if not os.path.exists(filepath):
-        print("please download https://www.dropbox.com/s/ge9e5ujwgetktms/i3d_torchscript.pt")
-        # os.system(f"wget {i3D_WEIGHTS_URL} -O {filepath}")
+        print(f"download i3d_pretrained from {i3D_WEIGHTS_URL} to {filepath}")
+        # os.system(f"wget -O {filepath} {i3D_WEIGHTS_URL} ")
     i3d = torch.jit.load(filepath).eval().to(device)
     # i3d = torch.nn.DataParallel(i3d)
     return i3d
