@@ -5,13 +5,14 @@ import mediapy as media
 
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
+import random
 
 # for image dataset
 import albumentations
 from PIL import Image
 import torch
 
-from h5 import HDF5Dataset
+from data.h5 import HDF5Dataset
 
 class ConcatDatasetWithIndex(ConcatDataset):
     """Modified from original pytorch code to return dataset idx"""
@@ -82,8 +83,10 @@ class HDF5InterfaceDataset(Dataset):
         # The numpy HWC image is converted to pytorch CHW tensor. 
         # If the image is in HW format (grayscale image), 、
         # it will be converted to pytorch HW tensor.
+        flag = random.choice([0,1])
+
         self.trans = A.Compose([
-            A.HorizontalFlip(p=0.5),
+            A.HorizontalFlip(p=flag),
             ToTensorV2()
         ])
 
@@ -119,7 +122,9 @@ class HDF5InterfaceDataset(Dataset):
             for i in range(time_idx, min(time_idx + self.frames_per_sample, video_len)):
                 final_clip.append(self.trans(image=f[str(idx_in_shard)][str(i)][()])["image"])
 
-        video["video"] = torch.stack(final_clip)
+        final_clip = torch.stack(final_clip)
+        final_clip = (final_clip/127.5 - 1.0).type(torch.float32)
+        video["video"] = final_clip
 
         for k in self.labels:
             video[k] = self.labels[k][i]

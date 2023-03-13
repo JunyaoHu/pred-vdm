@@ -3,10 +3,8 @@ import numpy as np
 import albumentations as A
 from torch.utils.data import Dataset
 
-from base import ImagePaths, NumpyPaths, ConcatDatasetWithIndex
-from base import VideoPaths, HDF5InterfaceDataset
-from h5 import HDF5Dataset
-
+from data.base import ImagePaths, NumpyPaths, ConcatDatasetWithIndex
+from data.base import VideoPaths, HDF5InterfaceDataset
 
 class DatasetBase(Dataset):
     def __init__(self, *args, **kwargs):
@@ -111,3 +109,10 @@ if __name__ == "__main__":
     print(dataset1[0]['video'].shape)
     print(dataset2[0]['video'].shape)
     print(dataset3[0]['video'].shape)
+
+    import mediapy as media
+    video = dataset1[0]['video']
+    # [-1,1] float32
+    # torch.Size([15, 1, 64, 64])
+    media.show_video(((video+1)/2).squeeze().numpy(), fps=20)
+

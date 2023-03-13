@@ -82,7 +82,7 @@ class DDPM(pl.LightningModule):
                  conditioning_key=None,
                  parameterization="eps",  # all assuming fixed variance schedules
                  scheduler_config=None,
-                 use_positional_encodings=False,
+                #  use_positional_encodings=False,
                  learn_logvar=False,
                  logvar_init=0.,
                  ):
@@ -97,7 +97,7 @@ class DDPM(pl.LightningModule):
         self.image_size = image_size  # try conv?
         self.VQ_batch_size = VQ_batch_size
         self.channels = channels
-        self.use_positional_encodings = use_positional_encodings
+        # self.use_positional_encodings = use_positional_encodings
         self.model = DiffusionWrapper(unet_config, conditioning_key)
         count_params(self.model, verbose=True)
         self.use_ema = use_ema
@@ -355,14 +355,15 @@ class DDPM(pl.LightningModule):
         # ### it has been rewritten in LatentDiffusion ###
         pass
     
-    def get_input(self, batch, key):
+    def get_input(self, batch, key, bthwc2btchw=False):
         # batch["video"] wiill get video tensor batch
         # when channel = 1, len(x.shape) == 2, should add a channel dim, but we all 3 channel
         # if len(x.shape) == 3:
         #     x = x[..., None]
         
         x = batch[key]
-        x = rearrange(x, 'b t h w c -> b t c h w')
+        if bthwc2btchw:
+            x = rearrange(x, 'b t h w c -> b t c h w')
         x = x.to(memory_format=torch.contiguous_format).float()
         
         return x
@@ -492,11 +493,20 @@ class LatentDiffusion(DDPM):
         assert self.num_timesteps_cond <= kwargs['timesteps']
         # for backwards compatibility after implementation of DiffusionWrapper
         # 实现DiffusionWrapper后的向后兼容性
-        if conditioning_key is None:
-            conditioning_key = 'concat' if concat_mode else 'crossattn'
-        
+        # cond_stage_config -> conditioning_key -> concat_mode
+
         if cond_stage_config == '__is_unconditional__':
             conditioning_key = None
+        else:
+            if conditioning_key is not None:
+                pass
+            else:
+                if concat_mode:
+                    conditioning_key = 'concat'
+                else:
+                    conditioning_key = 'crossattn'
+                
+        
         ckpt_path = kwargs.pop("ckpt_path", None)
         ignore_keys = kwargs.pop("ignore_keys", [])
         super().__init__(conditioning_key=conditioning_key, *args, **kwargs)
@@ -571,6 +581,7 @@ class LatentDiffusion(DDPM):
 
     def instantiate_cond_stage(self, config):
         # this way
+        # 条件不可训练
         if not self.cond_stage_trainable:
             if config == "__is_first_stage__":
                 print("Using first stage also as cond stage.")
@@ -579,7 +590,7 @@ class LatentDiffusion(DDPM):
                 print(f"Training {self.__class__.__name__} as an unconditional model.")
                 self.cond_stage_model = None
             else:
-                # TODO: -> this way, make a 光流相关的 model from x
+                # TODO: -> this way, make a motion state 相关的 model from x
                 model = instantiate_from_config(config)
                 self.cond_stage_model = model.eval()
                 self.cond_stage_model.train = disabled_train
@@ -621,7 +632,8 @@ class LatentDiffusion(DDPM):
 
     def get_learned_conditioning(self, c):
         if self.cond_stage_forward is None:
-            # this way
+            # this way, cond条件模型应该设置一个encode接口
+            # ps: c可能是一个字典或者列表，这个时候应该创建encode接口
             if hasattr(self.cond_stage_model, 'encode') and callable(self.cond_stage_model.encode):
                 c = self.cond_stage_model.encode(c)
                 if isinstance(c, DiagonalGaussianDistribution):
@@ -726,19 +738,46 @@ class LatentDiffusion(DDPM):
     def get_input(self, batch, key, return_first_stage_outputs=False, force_c_encode=False,
                   cond_key=None, return_original_cond=False, bs=None):
         # key = "video" to get video batch x
-        # batch:
-        #   [b, t, c, h_origin, w_origin] -> [b, self.frame_num.train_valid_total, self.channels, h_origin, w_origin]
+        # batch["video"]:
+        #   [b, t, c, h_origin, w_origin]
         # x:
-        #   [b, train_valid_total, c, h_origin, w_origin]
+        #   [b, self.frame_num.pred, c, h_origin, w_origin]
+        # z:
+        #   [b, self.frame_num.pred*c, h_latent, w_latent]
+        # c:
+        #   [b, self.frame_num.cond*c, h_latent, w_latent]
+
+        """
+        x: original video batch        
+        |
+        |   index (b t c h w) -> (b' c h w)
+        v
+        x[i] 
+        |
+        |   Encoder (b' c h w) -> (b' c h' w')
+        |   append and stack  (b' c h w) -> (b'' b' c h' w')
+        v
+        z
+        |
+        |   reshape (b'' b' c h' w') -> (b t c h' w')
+        |   rearrange (b t c h' w') -> (b c' h' w')
+        |   get_first_stage_encoding
+        v
+        z   (prepare for Conv2d)
+        """
 
         x = super().get_input(batch, key)
         if bs is not None:
             x = x[:bs]
-        x = x.to(self.device)
 
-        # based on image encode process
-        # we encode the video frame by frame then stack them into latent video space
+        # TODO: 为了获取cond frames的encode 和mcvd对齐 暂时注释
+        # x = x[:,:self.frame_num.pred].to(self.device)
+        if x.shape[2] == 1:
+            x = repeat(x, "b t c h w -> b t (3 c) h w")
 
+        # x torch.Size([64, 15->5, 1->3, 64, 64])
+
+        # it is based on LDM image encode process
         # start = time.time()
         z = []
         tmp_z = rearrange(x, 'b t c h w -> (b t) c h w')
@@ -750,61 +789,55 @@ class LatentDiffusion(DDPM):
         z = rearrange(z, 'b t c h w -> b (t c) h w')
         z = self.get_first_stage_encoding(z).detach()
         # rank_zero_info(f"get input encode done         {time.time() - start}")
-        
-        """
-        x: original video batch        
-        |
-        |   index ('b t c h w -> t c h w')
-        v
-        x[i] 
-        |
-        |   Encoder ('t c h w -> t c h/f w/f')
-        |   append and stack  ('t c h w -> b t c h w')
-        v
-        z
-        |
-        |   get_first_stage_encoding
-        |   rearrange('b t c h w -> b (t c) h w')
-        v
-        z   (prepare for Conv2d)
-        """
+        # about 0.18 seconds
 
         if self.model.conditioning_key is not None:
             if cond_key is None:
                 cond_key = self.cond_stage_key
+
             if cond_key != self.first_stage_key:
                 if cond_key in ['caption', 'coordinates_bbox']:
                     xc = batch[cond_key]
                 elif cond_key == 'class_label':
                     xc = batch
+                # condition_frames_motion_state this way
+                elif cond_key == "condition_frames_motion_state":
+                    xc = x[:,:self.frame_num.cond]
+                # condition_frames
+                elif cond_key == "condition_frames":
+                    xc = x[:,:self.frame_num.cond]
                 else:
                     xc = super().get_input(batch, cond_key).to(self.device)
             else:
-                # this way
                 xc = x
 
+            #  (条件阶段不可训练) 或者 (强制对条件进行encode)
             if not self.cond_stage_trainable or force_c_encode:
                 if isinstance(xc, dict) or isinstance(xc, list):
                     c = self.get_learned_conditioning(xc)
                 else:
-                    c = self.get_learned_conditioning(xc.to(self.device))
+                    # tensor this way
+                    if cond_key == "condition_frames":
+                        c = z[:,:self.frame_num.cond*self.channels].to(self.device)
+                    else:
+                        c = self.get_learned_conditioning(xc.to(self.device))
             else:
                 c = xc
 
             if bs is not None:
                 c = c[:bs]
 
-            if self.use_positional_encodings:
-                pos_x, pos_y = self.compute_latent_shifts(batch)
-                ckey = __conditioning_keys__[self.model.conditioning_key]
-                c = {ckey: c, 'pos_x': pos_x, 'pos_y': pos_y}
+            # if self.use_positional_encodings:
+            #     pos_x, pos_y = self.compute_latent_shifts(batch)
+            #     ckey = __conditioning_keys__[self.model.conditioning_key]
+            #     c = {ckey: c, 'pos_x': pos_x, 'pos_y': pos_y}
 
         else:
             c = None
             xc = None
-            if self.use_positional_encodings:
-                pos_x, pos_y = self.compute_latent_shifts(batch)
-                c = {'pos_x': pos_x, 'pos_y': pos_y}
+            # if self.use_positional_encodings:
+            #     pos_x, pos_y = self.compute_latent_shifts(batch)
+            #     c = {'pos_x': pos_x, 'pos_y': pos_y}
         
         out = [z, c]
 
@@ -826,7 +859,6 @@ class LatentDiffusion(DDPM):
             x_rec (prepare for output)
             """
             # start = time.time()
-
             tmp_x_rec = z.reshape(z.shape[0], -1, self.channels, self.image_size, self.image_size)
             tmp_x_rec = rearrange(tmp_x_rec, 'b t c h w -> (b t) c h w')
             x_rec = []
@@ -837,6 +869,7 @@ class LatentDiffusion(DDPM):
             x_rec = x_rec.reshape(x.shape[0], -1, self.channels, x.shape[3], x.shape[4])
             # rank_zero_info(f"x_rec           min max mean {x_rec.min()} {x_rec.max()} {x_rec.mean()}")
             # rank_zero_info(f"get input decode done         {time.time() - start}")
+            # about 0.18 seconds
             out.extend([x, x_rec])
 
         if return_original_cond:
@@ -961,7 +994,6 @@ class LatentDiffusion(DDPM):
         #   [b, t_dataset, c, h_origin, w_origin]
         z, c = self.get_input(batch, self.first_stage_key)
         loss = self(z, c)
-
         return loss
 
     def forward(self, z, c, *args, **kwargs):
@@ -1686,7 +1718,7 @@ class DiffusionWrapper(pl.LightningModule):
         elif self.conditioning_key == 'concat':
             xc = torch.cat([x] + c_concat, dim=1)
             out = self.diffusion_model(xc, t)
-        # -> this way, 把crossattn的条件全加，通道数增加
+        # -> this way, 把crossattn的条件全加，通道数增加，所以如果有多个条件，所有条件的维度和形状要相同
         elif self.conditioning_key == 'crossattn':
             cc = torch.cat(c_crossattn, 1)
             out = self.diffusion_model(x, t, context=cc)

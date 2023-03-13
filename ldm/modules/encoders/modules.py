@@ -6,7 +6,8 @@ from einops import rearrange, repeat
 import kornia
 
 
-from ldm.modules.x_transformer import Encoder, TransformerWrapper  # TODO: can we directly rely on lucidrains code and simply add this as a reuirement? --> test
+from ldm.modules.x_transformer import Encoder, TransformerWrapper  
+# TODO: can we directly rely on lucidrains code and simply add this as a reuirement? --> test
 
 
 class AbstractEncoder(nn.Module):
@@ -27,10 +28,9 @@ class ClassEmbedder(nn.Module):
     def forward(self, batch, key=None):
         if key is None:
             key = self.key
-        # this is for use in crossattn
-        # TODO: what is this ?
         c = batch[key][:, None]
         c = self.embedding(c)
+        # c [bs, 1, embed_dim]
         return c
 
 
@@ -102,6 +102,44 @@ class BERTEmbedder(AbstractEncoder):
     def encode(self, text):
         # output of length 77
         return self(text)
+
+class MotionStateTokenizer(AbstractEncoder):
+    """ Uses a MotionStateTokenizer tokenizer by optical flow and so on."""
+    def __init__(self, t_length, embed_dim, device="cuda"):
+        super().__init__()
+        from models.motion_state.motion_state import motion_state
+        self.tokenizer = motion_state
+        self.t_length = t_length
+        self.embed_dim = embed_dim
+        self.device = device
+
+    def forward(self, video):
+        batch_encoding = self.tokenizer(video, self.t_length, self.embed_dim)
+        tokens = batch_encoding.to(self.device)
+        return tokens
+
+    @torch.no_grad()
+    def encode(self, video):
+        tokens = self(video)
+        return tokens
+
+    def decode(self, video):
+        return video
+    
+class MotionStateEmbedder(AbstractEncoder):
+    """Uses the Motion State tokenizr model and add some transformer encoder layers"""
+    def __init__(self, t_length, embed_dim, device="cuda"):
+        super().__init__()
+        self.tknz_fn = MotionStateTokenizer(t_length=t_length, embed_dim=embed_dim)
+        self.device = device
+
+    def forward(self, video):
+        tokens = self.tknz_fn(video)#.to(self.device)
+        # tokens [bs, 20, 408]
+        return tokens
+
+    def encode(self, video):
+        return self(video)
 
 
 class SpatialRescaler(nn.Module):
