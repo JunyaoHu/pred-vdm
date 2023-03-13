@@ -11,3 +11,6 @@ models/optical_flow/opticalflow.py
 
 data/KTH/processed/
 data/KTH/raw/
+videos/val/
+.vscode
+lightning_logs

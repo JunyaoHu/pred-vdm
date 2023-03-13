@@ -771,17 +771,17 @@ if __name__ == "__main__":
             print(
                 'Caution: Saving checkpoints every n train steps without deleting. This might require some free space.')
             default_metrics_over_trainsteps_ckpt_dict = {
-                'metrics_over_trainsteps_checkpoint':
-                    {"target": 'pytorch_lightning.callbacks.ModelCheckpoint',
-                     'params': {
-                         "dirpath": os.path.join(ckptdir, 'trainstep_checkpoints'),
-                         "filename": "{epoch:06}-{step:09}",
-                         "verbose": True,
-                         'save_top_k': -1,
-                         'every_n_train_steps': 10000,
-                         'save_weights_only': True
-                     }
-                     }
+                'metrics_over_trainsteps_checkpoint':{
+                    "target": 'pytorch_lightning.callbacks.ModelCheckpoint',
+                    'params': {
+                        "dirpath": os.path.join(ckptdir, 'trainstep_checkpoints'),
+                        "filename": "{epoch:06}-{step:09}",
+                        "verbose": True,
+                        'save_top_k': -1,
+                        'every_n_train_steps': 10000,
+                        'save_weights_only': True
+                    }
+                }
             }
             default_callbacks_cfg.update(default_metrics_over_trainsteps_ckpt_dict)
 

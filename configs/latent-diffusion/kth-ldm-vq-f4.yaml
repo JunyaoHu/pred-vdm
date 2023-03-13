@@ -23,26 +23,35 @@ model:
     #     f_min: [1.]
 
     first_stage_key: video
+
+    cond_stage_key: condition_frames
     # cond_stage_key: class_label
 
     # 1. if     caption, coordinates_bbox
     #               -> batch
     # 2. elif   class_label
     #               -> batch[cond_key]
+    # 4. elif   condition_frames_motion_state
+    #               -> x[:,:self.frame_num.cond]
+    # 5. elif   condition_frames
+    #               -> x[:,:self.frame_num.cond]
     # 3. else   image, nix, LR_image, masked_image, segmentation，objects_bbox，depth，bbox_img
     #               -> super().get_input(batch, cond_key).to(self.device)
     
-    # cond_stage_trainable: false
-    # [None, 'concat', 'crossattn', 'hybrid', 'adm']
+    cond_stage_trainable: false
+
+    # conditioning_key in [None, 'concat', 'crossattn', 'hybrid', 'adm']
     # conditioning_key: crossattn
+    conditioning_key: concat
 
+    # cond_stage_config: __is_unconditional__
     # cond_stage_config: __is_first_stage__
-
-    cond_stage_config: __is_unconditional__
-
-    # cond_stage_config:
-    #   target: models.optical_flow.opticalflow.OpticalFlowEmbedder
-    #   params:
+    
+    cond_stage_config:
+      target: ldm.modules.encoders.modules.MotionStateEmbedder
+      params:
+        t_length: 20
+        embed_dim: 408
 
     # cond_stage_config:
     #   target: ldm.modules.encoders.modules.ClassEmbedder
@@ -109,16 +118,21 @@ model:
         # the downsampling factor, i.e. this corresnponds to
         # attention on spatial resolution 8,16,32, as the
         # spatial reolution of the latents is 64 for f4
-        - 8
         - 4
         - 2
+        - 1
         num_res_blocks: 2
         channel_mult:
         - 1
         - 2
-        - 3
         - 4
         num_head_channels: 32
+        use_spatial_transformer: true
+        transformer_depth: 1
+        context_dim: 408
+        # ps: [context_dim] should be equal to the [embed_dim] of cond_stage_config
+        # use_scale_shift_norm: True
+        # resblock_updown: True
     
     first_stage_config:
       target: ldm.models.autoencoder.VQModelInterface
@@ -158,17 +172,14 @@ data:
       target: data.mydataset.KTH
       params:
         data_dir: ./data/KTH/processed/train
-        size: 64
     validation:
       target: data.mydataset.KTH
       params:
         data_dir: ./data/KTH/processed/valid
-        size: 64
     test:
       target: data.mydataset.KTH
       params:
         data_dir: ./data/KTH/processed/test
-        size: 64
 
 lightning:
   callbacks:
@@ -177,16 +188,20 @@ lightning:
       params:
         # we do videologger (save local, and upload wandb) when training and validation, which step % [batch_frequency] == 0
         # ps: it should run and set it again or estimated it (min batch_frequency = ceil(training dataset / training batchsize / gpus) )
-        batch_frequency: 146 # 730 # it means 146 batches in a epoch * 5
+        batch_frequency: 20 # 730 # it means 146 batches in a epoch * 5
         max_videos: 4
         increase_log_steps: False
 
   trainer:
     benchmark: True
+    # 梯度累积
     # accumulate_grad_batches: 2
     # Stop training after training step up to [max_steps]. Disabled by default (-1), it will go on forever until interrupted
     max_steps: 40000
     # log_steps for train_loss (because its log_dict\log is on_step=True), default (50),
     log_every_n_steps: 50
+    # 提前校验，避免校验时出错导致浪费时间
     # Sanity check runs n validation batches before starting the training routine. Set it to -1 to run all batches in all validation dataloaders. Default: 2.
     num_sanity_val_steps: 0
+    # 每n个epoch校验一次，即自动调用 validation_step() 函数, 默认为1
+    check_val_every_n_epoch: 10
