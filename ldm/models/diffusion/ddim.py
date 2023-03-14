@@ -222,45 +222,45 @@ class DDIMSampler(object):
             x_prev = a_prev.sqrt() * pred_x0 + dir_xt + noise
             return x_prev, pred_x0
 
-        elif self.parameterization == 'x0':
-            if unconditional_conditioning is None or unconditional_guidance_scale == 1.:
-                pred_x0 = self.model.apply_model(x, t, c)
-            else:
-                x_in = torch.cat([x] * 2)
-                t_in = torch.cat([t] * 2)
-                c_in = torch.cat([unconditional_conditioning, c])
-                pred_x0_uncond,  pred_x0 = self.model.apply_model(x_in, t_in, c_in).chunk(2)
-                pred_x0 = pred_x0_uncond + unconditional_guidance_scale * (pred_x0 - pred_x0_uncond)
+        # elif self.parameterization == 'x0':
+        #     if unconditional_conditioning is None or unconditional_guidance_scale == 1.:
+        #         pred_x0 = self.model.apply_model(x, t, c)
+        #     else:
+        #         x_in = torch.cat([x] * 2)
+        #         t_in = torch.cat([t] * 2)
+        #         c_in = torch.cat([unconditional_conditioning, c])
+        #         pred_x0_uncond,  pred_x0 = self.model.apply_model(x_in, t_in, c_in).chunk(2)
+        #         pred_x0 = pred_x0_uncond + unconditional_guidance_scale * (pred_x0 - pred_x0_uncond)
 
-            if score_corrector is not None:
-                pred_x0 = score_corrector.modify_score(self.model, pred_x0, x, t, c, **corrector_kwargs)
+        #     if score_corrector is not None:
+        #         pred_x0 = score_corrector.modify_score(self.model, pred_x0, x, t, c, **corrector_kwargs)
 
-            alphas = self.model.alphas_cumprod if use_original_steps else self.ddim_alphas
-            alphas_prev = self.model.alphas_cumprod_prev if use_original_steps else self.ddim_alphas_prev
-            sqrt_one_minus_alphas = self.model.sqrt_one_minus_alphas_cumprod if use_original_steps else self.ddim_sqrt_one_minus_alphas
-            sigmas = self.model.ddim_sigmas_for_original_num_steps if use_original_steps else self.ddim_sigmas
+        #     alphas = self.model.alphas_cumprod if use_original_steps else self.ddim_alphas
+        #     alphas_prev = self.model.alphas_cumprod_prev if use_original_steps else self.ddim_alphas_prev
+        #     sqrt_one_minus_alphas = self.model.sqrt_one_minus_alphas_cumprod if use_original_steps else self.ddim_sqrt_one_minus_alphas
+        #     sigmas = self.model.ddim_sigmas_for_original_num_steps if use_original_steps else self.ddim_sigmas
             
-            # select parameters corresponding to the currently considered timestep
-            a_t = torch.full((b, 1, 1, 1), alphas[index], device=device)
-            a_prev = torch.full((b, 1, 1, 1), alphas_prev[index], device=device)
-            sigma_t = torch.full((b, 1, 1, 1), sigmas[index], device=device)
-            sqrt_one_minus_at = torch.full((b, 1, 1, 1), sqrt_one_minus_alphas[index],device=device)
+        #     # select parameters corresponding to the currently considered timestep
+        #     a_t = torch.full((b, 1, 1, 1), alphas[index], device=device)
+        #     a_prev = torch.full((b, 1, 1, 1), alphas_prev[index], device=device)
+        #     sigma_t = torch.full((b, 1, 1, 1), sigmas[index], device=device)
+        #     sqrt_one_minus_at = torch.full((b, 1, 1, 1), sqrt_one_minus_alphas[index],device=device)
 
-            # current prediction for x_0
-            # pred_x0 = (x - sqrt_one_minus_at * e_t) / a_t.sqrt()
+        #     # current prediction for x_0
+        #     # pred_x0 = (x - sqrt_one_minus_at * e_t) / a_t.sqrt()
 
-            e_t = (x - pred_x0 * a_t.sqrt()) / sqrt_one_minus_at
+        #     e_t = (x - pred_x0 * a_t.sqrt()) / sqrt_one_minus_at
 
-            if quantize_denoised:
-                pred_x0, _, *_ = self.model.first_stage_model.quantize(pred_x0)
-            # direction pointing to x_t
-            dir_xt = (1. - a_prev - sigma_t**2).sqrt() * e_t
-            noise = sigma_t * noise_like(x.shape, device, repeat_noise) * temperature
-            if noise_dropout > 0.:
-                noise = torch.nn.functional.dropout(noise, p=noise_dropout)
-            x_prev = a_prev.sqrt() * pred_x0 + dir_xt + noise
+        #     if quantize_denoised:
+        #         pred_x0, _, *_ = self.model.first_stage_model.quantize(pred_x0)
+        #     # direction pointing to x_t
+        #     dir_xt = (1. - a_prev - sigma_t**2).sqrt() * e_t
+        #     noise = sigma_t * noise_like(x.shape, device, repeat_noise) * temperature
+        #     if noise_dropout > 0.:
+        #         noise = torch.nn.functional.dropout(noise, p=noise_dropout)
+        #     x_prev = a_prev.sqrt() * pred_x0 + dir_xt + noise
 
-            return x_prev, pred_x0
+        #     return x_prev, pred_x0
         else:
             NotImplementedError()
 

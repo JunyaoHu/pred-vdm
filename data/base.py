@@ -8,8 +8,8 @@ from albumentations.pytorch import ToTensorV2
 import random
 
 # for image dataset
-import albumentations
-from PIL import Image
+# import albumentations
+# from PIL import Image
 import torch
 
 from data.h5 import HDF5Dataset
@@ -66,7 +66,7 @@ class VideoPaths(Dataset):
     
 
 class HDF5InterfaceDataset(Dataset):
-    def __init__(self, data_dir, frames_per_sample=15, random_time=True, random_horizontal_flip=True, total_videos=-1, start_at=0, labels=None):
+    def __init__(self, data_dir, frames_per_sample, random_time=True, total_videos=-1, start_at=0, labels=None):
         super().__init__()
         if labels is None:
             self.labels = dict() 
@@ -77,7 +77,6 @@ class HDF5InterfaceDataset(Dataset):
         self.total_videos = total_videos
         self.start_at = start_at
         self.random_time = random_time
-        self.random_horizontal_flip = random_horizontal_flip
         self.frames_per_sample = frames_per_sample
 
         # The numpy HWC image is converted to pytorch CHW tensor. 
@@ -121,60 +120,59 @@ class HDF5InterfaceDataset(Dataset):
             time_idx += self.start_at
             for i in range(time_idx, min(time_idx + self.frames_per_sample, video_len)):
                 final_clip.append(self.trans(image=f[str(idx_in_shard)][str(i)][()])["image"])
-
         final_clip = torch.stack(final_clip)
         final_clip = (final_clip/127.5 - 1.0).type(torch.float32)
         video["video"] = final_clip
 
         for k in self.labels:
             video[k] = self.labels[k][i]
-            
         return video
 
-class ImagePaths(Dataset):
-    def __init__(self, paths, size=None, random_crop=False, labels=None):
-        self.size = size
-        self.random_crop = random_crop
 
-        self.labels = dict() if labels is None else labels
-        self.labels["file_path"] = paths
-        self._length = len(paths)
+# class ImagePaths(Dataset):
+#     def __init__(self, paths, size=None, random_crop=False, labels=None):
+#         self.size = size
+#         self.random_crop = random_crop
 
-        if self.size is not None and self.size > 0:
-            self.rescaler = albumentations.SmallestMaxSize(max_size = self.size)
-            if not self.random_crop:
-                self.cropper = albumentations.CenterCrop(height=self.size,width=self.size)
-            else:
-                self.cropper = albumentations.RandomCrop(height=self.size,width=self.size)
-            self.preprocessor = albumentations.Compose([self.rescaler, self.cropper])
-        else:
-            self.preprocessor = lambda **kwargs: kwargs
+#         self.labels = dict() if labels is None else labels
+#         self.labels["file_path"] = paths
+#         self._length = len(paths)
 
-    def __len__(self):
-        return self._length
+#         if self.size is not None and self.size > 0:
+#             self.rescaler = albumentations.SmallestMaxSize(max_size = self.size)
+#             if not self.random_crop:
+#                 self.cropper = albumentations.CenterCrop(height=self.size,width=self.size)
+#             else:
+#                 self.cropper = albumentations.RandomCrop(height=self.size,width=self.size)
+#             self.preprocessor = albumentations.Compose([self.rescaler, self.cropper])
+#         else:
+#             self.preprocessor = lambda **kwargs: kwargs
 
-    def preprocess_image(self, image_path):
-        image = Image.open(image_path)
-        if not image.mode == "RGB":
-            image = image.convert("RGB")
-        image = np.array(image).astype(np.uint8)
-        image = self.preprocessor(image=image)["image"]
-        image = (image/127.5 - 1.0).astype(np.float32)
-        return image
+#     def __len__(self):
+#         return self._length
 
-    def __getitem__(self, i):
-        example = dict()
-        example["image"] = self.preprocess_image(self.labels["file_path_"][i])
-        for k in self.labels:
-            example[k] = self.labels[k][i]
-        return example
+#     def preprocess_image(self, image_path):
+#         image = Image.open(image_path)
+#         if not image.mode == "RGB":
+#             image = image.convert("RGB")
+#         image = np.array(image).astype(np.uint8)
+#         image = self.preprocessor(image=image)["image"]
+#         image = (image/127.5 - 1.0).astype(np.float32)
+#         return image
+
+#     def __getitem__(self, i):
+#         example = dict()
+#         example["image"] = self.preprocess_image(self.labels["file_path_"][i])
+#         for k in self.labels:
+#             example[k] = self.labels[k][i]
+#         return example
     
-class NumpyPaths(ImagePaths):
-    def preprocess_image(self, image_path):
-        image = np.load(image_path).squeeze(0)  # 3 x 1024 x 1024
-        image = np.transpose(image, (1,2,0))
-        image = Image.fromarray(image, mode="RGB")
-        image = np.array(image).astype(np.uint8)
-        image = self.preprocessor(image=image)["image"]
-        image = (image/127.5 - 1.0).astype(np.float32)
-        return image
+# class NumpyPaths(ImagePaths):
+#     def preprocess_image(self, image_path):
+#         image = np.load(image_path).squeeze(0)  # 3 x 1024 x 1024
+#         image = np.transpose(image, (1,2,0))
+#         image = Image.fromarray(image, mode="RGB")
+#         image = np.array(image).astype(np.uint8)
+#         image = self.preprocessor(image=image)["image"]
+#         image = (image/127.5 - 1.0).astype(np.float32)
+#         return image

@@ -1,10 +1,12 @@
-import os
-import numpy as np
-import albumentations as A
+# import os
+# import numpy as np
+# import albumentations as A
 from torch.utils.data import Dataset
 
-from data.base import ImagePaths, NumpyPaths, ConcatDatasetWithIndex
-from data.base import VideoPaths, HDF5InterfaceDataset
+# from data.base import ImagePaths, NumpyPaths, ConcatDatasetWithIndex
+# from data.base import VideoPaths, HDF5InterfaceDataset
+
+from data.base import HDF5InterfaceDataset
 
 class DatasetBase(Dataset):
     def __init__(self, *args, **kwargs):
@@ -27,11 +29,10 @@ class DatasetBase(Dataset):
 
 
 class KTH(DatasetBase):
-    def __init__(self, data_dir, keys=None):
+    def __init__(self, data_dir, frames_per_sample=15, keys=None):
         super().__init__()
         self.keys = keys
-        self.data = HDF5InterfaceDataset(data_dir)
-
+        self.data = HDF5InterfaceDataset(data_dir, frames_per_sample)
 
 # class FacesHQTrain(Dataset):
 #     # CelebAHQ [0] + FFHQ [1]
@@ -97,21 +98,24 @@ class KTH(DatasetBase):
 #         return ex
 
 if __name__ == "__main__":
-    dataset1 = KTH("/home/ubuntu16/hjy/pred-vdm/data/KTH/processed/train")
+
+    #################### KTH ########################
+    dataset_root = "/home/ubuntu15/zzc/data/KTH/pred-vdm/processed"
+    dataset1 = KTH(f"{dataset_root}/train",50)
     print(len(dataset1))
 
-    dataset2 = KTH("/home/ubuntu16/hjy/pred-vdm/data/KTH/processed/valid")
+    dataset2 = KTH(f"{dataset_root}/valid",40)
     print(len(dataset2))
 
-    dataset3 = KTH("/home/ubuntu16/hjy/pred-vdm/data/KTH/processed/test")
+    dataset3 = KTH(f"{dataset_root}/test")
     print(len(dataset3))
 
-    print(dataset1[0]['video'].shape)
-    print(dataset2[0]['video'].shape)
-    print(dataset3[0]['video'].shape)
+    print(dataset1[len(dataset1)-1]['video'].shape)
+    print(dataset2[len(dataset2)-1]['video'].shape)
+    print(dataset3[len(dataset3)-1]['video'].shape)
 
     import mediapy as media
-    video = dataset1[0]['video']
+    video = dataset1[len(dataset1)-1]['video']
     # [-1,1] float32
     # torch.Size([15, 1, 64, 64])
     media.show_video(((video+1)/2).squeeze().numpy(), fps=20)

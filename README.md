@@ -14,12 +14,19 @@ prediction examples
 conda create -n pred-vdm python==3.9.15
 conda activate pred-vdm
 
+# CUDA 11.3
+conda install pytorch==1.12.1 torchvision==0.13.1 torchaudio==0.12.1 cudatoolkit=11.3 -c pytorch
+
+# CUDA 11.6
 conda install pytorch==1.12.1 torchvision==0.13.1 torchaudio==0.12.1 cudatoolkit=11.6 -c pytorch -c conda-forge
 
 conda install pytorch-lightning -c conda-forge
 conda install h5py
 
-pip install opencv-python scipy omegaconf mediapy einops wandb lpips progressbar scikit-image
+pip install opencv-python omegaconf mediapy einops wandb lpips progressbar scikit-image albumentations
+
+# mcvd need
+pip install ninja prettytable 
 
 # pred-vdm 还需要的步骤
 pip install -e .

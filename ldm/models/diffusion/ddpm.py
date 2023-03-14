@@ -740,6 +740,7 @@ class LatentDiffusion(DDPM):
         # key = "video" to get video batch x
         # batch["video"]:
         #   [b, t, c, h_origin, w_origin]
+        # TODO: 改成支持自回归格式的模型
         # x:
         #   [b, self.frame_num.pred, c, h_origin, w_origin]
         # z:
@@ -775,7 +776,7 @@ class LatentDiffusion(DDPM):
         if x.shape[2] == 1:
             x = repeat(x, "b t c h w -> b t (3 c) h w")
 
-        # x torch.Size([64, 15->5, 1->3, 64, 64])
+        # x torch.Size([64, 15, 1->3, 64, 64])
 
         # it is based on LDM image encode process
         # start = time.time()
@@ -817,6 +818,7 @@ class LatentDiffusion(DDPM):
                     c = self.get_learned_conditioning(xc)
                 else:
                     # tensor this way
+                    # TODO: 为了直接使用条件帧的办法，临时措施
                     if cond_key == "condition_frames":
                         c = z[:,:self.frame_num.cond*self.channels].to(self.device)
                     else:
@@ -838,6 +840,11 @@ class LatentDiffusion(DDPM):
             # if self.use_positional_encodings:
             #     pos_x, pos_y = self.compute_latent_shifts(batch)
             #     c = {'pos_x': pos_x, 'pos_y': pos_y}
+
+        # z torch.Size([64, 5*3, 16, 16])
+        z = z[:,self.frame_num.cond*self.channels:].to(self.device)
+        # x torch.Size([64, 5, 3, 64, 64])
+        x = x[:,self.frame_num.cond:].to(self.device)
         
         out = [z, c]
 
@@ -1153,27 +1160,27 @@ class LatentDiffusion(DDPM):
     def p_losses(self, z_start, cond, t, noise=None):
         # z_start (z): 
         #   latent 
-        #   [b, (cond+pred*n)*c, h_latent, h_latent]
+        #   [b, pred*c, h_latent, h_latent]
         # cond: 
         #   condition
-        #   None
+        #   [b, cond*c, h_latent, h_latent]
         # t: 
         #   difussion forward process (imnoise process)
         #   value randint[0, 1000step] shape [b,]
 
         # [we [only] do 1 time prediction, it is no use to research autoregression here, however the video long, we [only] get their first clip.]
 
-        z_cond = z_start[:, : self.frame_num.cond*self.channels]
-        z_pred = z_start[:,   self.frame_num.cond*self.channels : self.frame_num.cond*self.channels + self.frame_num.pred*self.channels]
+        z_pred = z_start
         
+        # TODO: only support frames_per_sample: 15
         # TODO: think about how to solve the z_pred_init [(49-10)/5] = 8, we input need padding for it
         z_noise   = default(noise, lambda: torch.randn_like(z_pred)).to(self.device)
         z_noisy     = self.q_sample(x_start=z_pred, t=t, noise=z_noise)
         # rank_zero_info(f"z_noisy         min max mean {z_noisy.min()} {z_noisy.max()} {z_noisy.mean()}")
         
         # start_time = time.time()
-        z_input     = torch.cat([z_cond, z_noisy], dim=1)
-        eps_result  = self.apply_model(z_input, t, cond)[:, -self.frame_num.pred*self.channels:]
+        z_input     = z_noisy
+        eps_result  = self.apply_model(z_input, t, cond)
         # rank_zero_info(f"apply_model done              {time.time() - start_time}")
 
         # rank_zero_info(f"tmp_eps_output  min max mean {eps_result.min()} {eps_result.max()} {eps_result.mean()}")
@@ -1182,7 +1189,6 @@ class LatentDiffusion(DDPM):
         prefix = 'train' if self.training else 'val'
 
         # rank_zero_info("get loss")
-
         # loss_latent (eps) ------------------------------------------------
         loss_eps = self.get_loss(eps_result, z_noise, mean=False).sum([1, 2, 3])
         loss_dict.update({f'{prefix}/loss_eps': loss_eps.mean()})
@@ -1408,31 +1414,28 @@ class LatentDiffusion(DDPM):
         # rank_zero_info("sample_log autogression")
         # x_T [bs, total*ch, h_latent, w_latent]
 
-        z_start = x_T
-
-        z_cond = z_start[:, :self.frame_num.cond*self.channels]
-        z_pred = z_start[:, self.frame_num.cond*self.channels:]
+        z_cond = cond
+        z_pred = x_T
         
         z_intermediates_real = z_pred.unsqueeze(0)
         z_result = z_cond
 
         z_intermediates = []
 
-        autogression_num = ceil( (z_start.shape[1]/self.channels - self.frame_num.cond) / self.frame_num.pred)
+        autogression_num = ceil( z_pred.shape[1] / self.channels / self.frame_num.pred)
 
         for i in range(autogression_num):
             z_cond      = z_result[:, -self.frame_num.cond*self.channels:]
-            z_noisy     = torch.randn(z_start.shape[0], self.frame_num.pred*self.channels, self.image_size, self.image_size).to(self.device)
-            x_input     = torch.cat([z_cond, z_noisy], dim=1)
+            z_noisy     = torch.randn(z_pred.shape[0], self.frame_num.pred*self.channels, self.image_size, self.image_size).to(self.device)
             if ddim:
                 ddim_sampler = DDIMSampler(self)
-                tmp_samples, tmp_intermediates = ddim_sampler.sample(ddim_steps, batch_size, shape, cond=cond, verbose=False, x_T=x_input, log_every_t=50, clip_denoised=self.clip_denoised, **kwargs)
-                z_result = torch.cat([z_result, tmp_samples[:,-self.frame_num.pred*self.channels:]], dim=1)
-                z_intermediates.append(torch.stack(tmp_intermediates['x_inter'])[:,:,-self.frame_num.pred*self.channels:]) # 'pred_x0' is DDIM's predicted x0
+                tmp_samples, tmp_intermediates = ddim_sampler.sample(ddim_steps, batch_size, shape, conditioning=z_cond, verbose=False, x_T=z_noisy, log_every_t=50, clip_denoised=self.clip_denoised, **kwargs)
+                z_result = torch.cat([z_result, tmp_samples], dim=1)
+                z_intermediates.append(torch.stack(tmp_intermediates['x_inter'])) # 'pred_x0' is DDIM's predicted x0
             else:
-                tmp_samples, tmp_intermediates = self.sample(cond, shape, batch_size=batch_size, return_intermediates=True, x_T=x_input, verbose=False)
-                z_result = torch.cat([z_result, tmp_samples[:,-self.frame_num.pred*self.channels:]], dim=1)
-                z_intermediates.append(torch.stack(tmp_intermediates)[:,:,-self.frame_num.pred*self.channels:])
+                tmp_samples, tmp_intermediates = self.sample(z_cond, shape, batch_size=batch_size, return_intermediates=True, x_T=z_noisy, verbose=False)
+                z_result = torch.cat([z_result, tmp_samples], dim=1)
+                z_intermediates.append(torch.stack(tmp_intermediates))
         
         z_intermediates = torch.cat(z_intermediates, dim=2)
         z_intermediates = z_intermediates[:,:,:z_intermediates_real.shape[2]]
@@ -1502,7 +1505,8 @@ class LatentDiffusion(DDPM):
                                            bs=N
                                            )
         N = min(x.shape[0], N)
-        shape = ((self.frame_num.cond+self.frame_num.pred)*self.channels, self.image_size, self.image_size)
+        # TODO: a little problem
+        shape = (self.frame_num.pred*self.channels, self.image_size, self.image_size)
 
         log["input"] = x
         # rank_zero_info(f"-------------------- x -- min max mean {x.min()} {x.max()} {x.mean()}")
@@ -1516,28 +1520,29 @@ class LatentDiffusion(DDPM):
         # print(f"xc   {xc}")
 
         """
-        z    torch.Size([8, 150, 16, 16])
-        c    None
-        x    torch.Size([8, 50, 3, 64, 64])
-        xrec torch.Size([8, 50, 3, 64, 64])
+        z    torch.Size([8, 5*3 , 16, 16])
+        c    torch.Size([8, 10*3, 16, 16])
+        x    torch.Size([8, 5, 3, 64, 64])
+        xrec torch.Size([8, 5, 3, 64, 64])
         xc   None
         """
 
         # TODO: do it
-        # if self.model.conditioning_key is not None:
-        #     if hasattr(self.cond_stage_model, "decode"):
-        #         xc = self.cond_stage_model.decode(c)
-        #         log["conditioning"] = xc
-        #     elif self.cond_stage_key in ["caption"]:
-        #         xc = log_txt_as_img((x.shape[2], x.shape[3]), batch["caption"])
-        #         log["conditioning"] = xc
-        #     elif self.cond_stage_key == 'class_label':
-        #         xc = log_txt_as_img((x.shape[2], x.shape[3]), batch["human_label"])
-        #         log['conditioning'] = xc
-        #     elif isimage(xc):
-        #         log["conditioning"] = xc
-        #     if ismap(xc):
-        #         log["original_conditioning"] = self.to_rgb(xc)
+        if self.model.conditioning_key is not None:
+            log["condition"] = xc
+            # if hasattr(self.cond_stage_model, "decode"):
+            #     xc = self.cond_stage_model.decode(c)
+            #     log["conditioning"] = xc
+            # elif self.cond_stage_key in ["caption"]:
+            #     xc = log_txt_as_img((x.shape[2], x.shape[3]), batch["caption"])
+            #     log["conditioning"] = xc
+            # elif self.cond_stage_key == 'class_label':
+            #     xc = log_txt_as_img((x.shape[2], x.shape[3]), batch["human_label"])
+            #     log['conditioning'] = xc
+            # elif isimage(xc):
+            #     log["conditioning"] = xc
+            # if ismap(xc):
+            #     log["original_conditioning"] = self.to_rgb(xc)
 
         # plot diffusion add noise process
         if plot_diffusion_rows:
@@ -1592,11 +1597,12 @@ class LatentDiffusion(DDPM):
             rank_zero_info(f"------- ddim x_samples -- min max mean {x_samples.min()} {x_samples.max()} {x_samples.mean()}")
             log["ddim200"] = x_samples
 
+            # x_samples 包括条件帧
             autogression_num = ceil( (x_samples.shape[1] - self.frame_num.cond) / self.frame_num.pred)
             log_metrics[f"{split}/used_time_per_autogression"] = (time.time() - start_time) / autogression_num
 
             videos1 = x_samples[:,self.frame_num.cond:].clamp(-1.,1.)
-            videos2 = x        [:,self.frame_num.cond:].clamp(-1.,1.)
+            videos2 = x.clamp(-1.,1.)
             videos1 = (videos1+1.)/2.
             videos2 = (videos2+1.)/2.
 

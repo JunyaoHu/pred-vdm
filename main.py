@@ -360,7 +360,7 @@ class VideoLogger(Callback):
         # for pytorch-lightning > 1.6.0
         tag = f"{split}"
         # columns = ["input","recon","z_origin","z_sample","ddim200","ddim200_quantized", "ddpm1000", "diffusion_row", "ddim200_row", "ddpm1000_row"]
-        columns = ["input", "recon", "z_origin", "z_sample", "ddim200", "diffusion_row", "ddim200_row"]
+        columns = ["input", "recon", "z_origin", "z_sample", "condition", "ddim200", "diffusion_row", "ddim200_row"]
         data = []
         rank_zero_info("upload wandb")
         for k in columns:
@@ -371,7 +371,7 @@ class VideoLogger(Callback):
                 grids = list([wandb.Image(i) for i in grids])
                 data.append(grids)
 
-            elif k in ["input","recon","z_origin","z_sample","ddim200"]:
+            elif k in ["input","recon","z_origin","z_sample","ddim200", "condition"]:
                 grids = videos[k]
                 if self.rescale:
                     grids = np.array(((grids + 1.0) * 127.5)).astype(np.uint8) 
@@ -408,7 +408,7 @@ class VideoLogger(Callback):
                     os.makedirs(os.path.split(path)[0], exist_ok=True)
                     media.write_image(path, grid)
             # elif k in ["input","recon","z_origin","z_sample","ddim200","ddim200_quantized", "ddpm1000"]:
-            elif k in ["input","recon","z_origin","z_sample","ddim200"]:
+            elif k in ["input","recon","z_origin","z_sample","ddim200", "condition"]:
                 for i in range(videos[k].shape[0]):
                     video = einops.rearrange(videos[k][i], "t c h w -> t h w c")
                     if self.rescale:
@@ -887,6 +887,8 @@ if __name__ == "__main__":
 
 # [for training like]
 # CUDA_VISIBLE_DEVICES=0,1 python main.py --base configs/latent-diffusion/kth-ldm-vq-f4.yaml --train --gpus 0,1
+# CUDA_VISIBLE_DEVICES=0 python main.py --base configs/latent-diffusion/kth-ldm-vq-f4.yaml --train --gpus 0,
+# python main.py --base configs/latent-diffusion/kth-ldm-vq-f4.yaml --train
 
 # [for resume from a checkpoint like]
 # CUDA_VISIBLE_DEVICES=0,1 python main.py --resume logs_training/20230220-213917_kth-ldm-vq-f4 --train --gpus 0,1

@@ -39,6 +39,12 @@ def read_video(video_path, image_size):
         image = cv2.resize(gray, (image_size, image_size))
         frames.append(image)
     cap.release()
+    if frames == []:
+        print(f"the file {video_path} may has been damaged, you should")
+        print("1. clean old video file and old hdf5 file")
+        print("2. download new video file")
+        print("3. generate hdf5 file again")
+        ValueError()
     return frames
 
 # def show_video(frames):
@@ -88,7 +94,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--out_dir', type=str, help="Directory to save .hdf5 files")
-    parser.add_argument('--split_dir', type=str, help="Directory to split dataset")
+    parser.add_argument('--split_dir', type=str, help="Directory to split dataset files")
     parser.add_argument('--kth_dir', type=str, help="Directory with KTH")
     parser.add_argument('--image_size', type=int, default=64)
     parser.add_argument('--vids_per_shard', type=int, default=1000000)
@@ -98,4 +104,6 @@ if __name__ == "__main__":
 
     make_h5_from_kth(out_dir=args.out_dir, kth_dir=args.kth_dir, split_dir=args.split_dir, image_size=args.image_size, vids_per_shard=args.vids_per_shard, force_h5=args.force_h5)
 
-# python 03_kth_convert.py --kth_dir ./raw --split_dir ./ --image_size 64 --out_dir ./processed --force_h5 False
+# cd /home/ubuntu15/zzc/code/videoprediction/pred-vdm/data/KTH
+# dataset_root=/home/ubuntu15/zzc/data/KTH
+# python 03_kth_convert.py --split_dir ./ --image_size 64 --kth_dir $dataset_root/raw --out_dir $dataset_root/pred-vdm/processed --force_h5 False

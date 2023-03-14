@@ -97,7 +97,7 @@ model:
     #     conditional_key: objects_bbox
 
     image_size: 16
-    VQ_batch_size: 256
+    VQ_batch_size: 64 #256
     channels: 3
     frame_num:
       cond: 10
@@ -111,8 +111,8 @@ model:
 
         image_size: 16
         in_channels: 45
-        out_channels: 45
-        model_channels: 224
+        out_channels: 15
+        model_channels: 96
         attention_resolutions:
         # note: this isn\t actually the resolution but
         # the downsampling factor, i.e. this corresnponds to
@@ -126,10 +126,10 @@ model:
         - 1
         - 2
         - 4
-        num_head_channels: 32
-        use_spatial_transformer: true
-        transformer_depth: 1
-        context_dim: 408
+        num_head_channels: 96
+        # use_spatial_transformer: true
+        # transformer_depth: 1
+        # context_dim: 408
         # ps: [context_dim] should be equal to the [embed_dim] of cond_stage_config
         # use_scale_shift_norm: True
         # resblock_updown: True
@@ -163,7 +163,7 @@ data:
   target: main.DataModuleFromConfig
   params:
     batch_size: 
-      train: 64
+      train: 32 #64
       validation: 100
       test: 256
     num_workers: 8
@@ -171,37 +171,38 @@ data:
     train:
       target: data.mydataset.KTH
       params:
-        data_dir: ./data/KTH/processed/train
+        data_dir: /home/ubuntu15/zzc/data/KTH/pred-vdm/processed/train
+        frames_per_sample: 15
     validation:
       target: data.mydataset.KTH
       params:
-        data_dir: ./data/KTH/processed/valid
+        data_dir: /home/ubuntu15/zzc/data/KTH/pred-vdm/processed/valid
+        frames_per_sample: 15
     test:
       target: data.mydataset.KTH
       params:
-        data_dir: ./data/KTH/processed/test
+        data_dir: /home/ubuntu15/zzc/data/KTH/pred-vdm/processed/test
+        frames_per_sample: 30
 
 lightning:
   callbacks:
     video_logger:
       target: main.VideoLogger
       params:
-        # we do videologger (save local, and upload wandb) when training and validation, which step % [batch_frequency] == 0
-        # ps: it should run and set it again or estimated it (min batch_frequency = ceil(training dataset / training batchsize / gpus) )
-        batch_frequency: 20 # 730 # it means 146 batches in a epoch * 5
+        batch_frequency: 1
         max_videos: 4
         increase_log_steps: False
 
   trainer:
     benchmark: True
     # 梯度累积
-    # accumulate_grad_batches: 2
+    accumulate_grad_batches: 2
     # Stop training after training step up to [max_steps]. Disabled by default (-1), it will go on forever until interrupted
-    max_steps: 40000
+    max_steps: 200000
     # log_steps for train_loss (because its log_dict\log is on_step=True), default (50),
-    log_every_n_steps: 50
+    log_every_n_steps: 100
     # 提前校验，避免校验时出错导致浪费时间
     # Sanity check runs n validation batches before starting the training routine. Set it to -1 to run all batches in all validation dataloaders. Default: 2.
     num_sanity_val_steps: 0
     # 每n个epoch校验一次，即自动调用 validation_step() 函数, 默认为1
-    check_val_every_n_epoch: 10
+    check_val_every_n_epoch: 200
