@@ -58,7 +58,8 @@ def read_video(video_path, image_size):
 
 def make_h5_from_kth(kth_dir, split_dir, image_size=64, out_dir='./h5_ds', vids_per_shard=1000000, force_h5=False):
     
-    classes = ['train', 'valid', 'test']
+    # classes = ['train', 'valid', 'test']
+    classes = ['train', 'valid']
 
     for type in classes:
         print(f"process {type}")

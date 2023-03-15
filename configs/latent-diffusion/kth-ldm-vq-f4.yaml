@@ -164,7 +164,7 @@ data:
   params:
     batch_size: 
       train: 32 #64
-      validation: 100
+      validation: 64
       test: 256
     num_workers: 8
     wrap: false
@@ -172,17 +172,19 @@ data:
       target: data.mydataset.KTH
       params:
         data_dir: /home/ubuntu15/zzc/data/KTH/pred-vdm/processed/train
-        frames_per_sample: 15
+        frames_per_sample: 20
     validation:
       target: data.mydataset.KTH
       params:
         data_dir: /home/ubuntu15/zzc/data/KTH/pred-vdm/processed/valid
-        frames_per_sample: 15
+        frames_per_sample: 40
+        total_videos: 64
     test:
       target: data.mydataset.KTH
       params:
-        data_dir: /home/ubuntu15/zzc/data/KTH/pred-vdm/processed/test
-        frames_per_sample: 30
+        data_dir: /home/ubuntu15/zzc/data/KTH/pred-vdm/processed/valid
+        frames_per_sample: 40
+        total_videos: 64
 
 lightning:
   callbacks:
@@ -190,7 +192,8 @@ lightning:
       target: main.VideoLogger
       params:
         batch_frequency: 1
-        max_videos: 4
+        calculate_video_num: 256
+        save_video_num: 8
         increase_log_steps: False
 
   trainer:

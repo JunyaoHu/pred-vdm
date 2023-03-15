@@ -321,13 +321,14 @@ class SetupCallback(Callback):
 
 
 class VideoLogger(Callback):
-    def __init__(self, batch_frequency, max_videos, clamp=True, increase_log_steps=True,
+    def __init__(self, batch_frequency, save_video_num, calculate_video_num, clamp=True, increase_log_steps=True,
                  rescale=True, disabled=False, log_on_batch_idx=False, log_first_step=False,
                  log_videos_kwargs=None):
         super().__init__()
         self.rescale = rescale
         self.batch_frequency = batch_frequency
-        self.max_videos = max_videos
+        self.save_video_num = save_video_num
+        self.calculate_video_num = calculate_video_num
         self.logger_log_videos = {
             # pl.loggers.TestTubeLogger: self._testtube,
             pl.loggers.WandbLogger: self._wandb,
@@ -360,11 +361,11 @@ class VideoLogger(Callback):
         # for pytorch-lightning > 1.6.0
         tag = f"{split}"
         # columns = ["input","recon","z_origin","z_sample","ddim200","ddim200_quantized", "ddpm1000", "diffusion_row", "ddim200_row", "ddpm1000_row"]
-        columns = ["input", "recon", "z_origin", "z_sample", "condition", "ddim200", "diffusion_row", "ddim200_row"]
+        columns = ["input", "recon", "z_origin", "z_sample", "condition", "ddim200", "ddim200_row"]
         data = []
         rank_zero_info("upload wandb")
         for k in columns:
-            if k in ["diffusion_row", "ddim200_row"]:
+            if k in ["ddim200_row"]:
                 grids = einops.rearrange(videos[k], "b c h w -> b h w c")
                 if self.rescale:
                     grids = np.array(((grids + 1.0) * 127.5)).astype(np.uint8)  # -1,1 -> 0,255; h,w,c -> uint8
@@ -398,7 +399,7 @@ class VideoLogger(Callback):
         root = os.path.join(save_dir, "videos", split)
         for k in videos:
             # if k in ["diffusion_row", "ddim200_row", "ddpm1000_row"]:
-            if k in ["diffusion_row", "ddim200_row"]:
+            if k in ["ddim200_row"]:
                 for i in range(videos[k].shape[0]):
                     grid = einops.rearrange(videos[k][i], "c h w -> h w c")
                     if self.rescale:
@@ -428,10 +429,14 @@ class VideoLogger(Callback):
             check_idx = pl_module.global_step
         
         # batch_idx % self.batch_freq == 0
-        if (self.check_frequency(check_idx)
-            and hasattr(pl_module, "log_videos") 
+        # if (self.check_frequency(check_idx)
+        #     and hasattr(pl_module, "log_videos") 
+        #     and callable(pl_module.log_videos) 
+        #     and self.max_videos > 0):
+        if (hasattr(pl_module, "log_videos") 
             and callable(pl_module.log_videos) 
-            and self.max_videos > 0):
+            and self.calculate_video_num > 0
+            and self.save_video_num > 0):
             rank_zero_info("log video")
             logger = type(pl_module.logger)
 
@@ -440,13 +445,18 @@ class VideoLogger(Callback):
                 pl_module.eval()
 
             with torch.no_grad():
-                videos, metrics = pl_module.log_videos(batch, split=split, **self.log_videos_kwargs)
+                videos, metrics = pl_module.log_videos(
+                    batch, 
+                    calculate_video_num=self.calculate_video_num,
+                    save_video_num = self.save_video_num,
+                    split=split, 
+                    **self.log_videos_kwargs
+                )
 
             # key = ["input","recon","z_origin","z_sample","ddim200", "diffusion_row", "ddim200_row"]
             # now, we not have  "samples_inpainting" "mask" "samples_outpainting" ,"ddim200_quantized", "ddpm1000","ddpm1000_row"
             for k in videos:
-                N = min(videos[k].shape[0], self.max_videos)
-                videos[k] = videos[k][:N]
+                videos[k] = videos[k]
                 if isinstance(videos[k], torch.Tensor):
                     videos[k] = videos[k].detach().cpu()
                     if self.clamp:
@@ -463,16 +473,16 @@ class VideoLogger(Callback):
                 
             rank_zero_info("log video done")
 
-    def check_frequency(self, check_idx):
-        if (((check_idx % self.batch_frequency) == 0 or (check_idx in self.log_steps)) 
-            and (check_idx > 0 or self.log_first_step)):
-            try:
-                self.log_steps.pop(0)
-            except IndexError as e:
-                # print(e)
-                pass
-            return True
-        return False
+    # def check_frequency(self, check_idx):
+    #     if (((check_idx % self.batch_frequency) == 0 or (check_idx in self.log_steps)) 
+    #         and (check_idx > 0 or self.log_first_step)):
+    #         try:
+    #             self.log_steps.pop(0)
+    #         except IndexError as e:
+    #             # print(e)
+    #             pass
+    #         return True
+    #     return False
 
     def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx):
         # if not self.disabled and (pl_module.global_step > 0 or self.log_first_step):
@@ -487,7 +497,7 @@ class VideoLogger(Callback):
                 self.log_gradients(trainer, pl_module, batch_idx=batch_idx)
 
     def on_test_batch_end(self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx):
-        if not self.disabled and pl_module.global_step > 0:
+        if not self.disabled:
             self.log_video(pl_module, batch, batch_idx, split="test")
 
 
@@ -571,8 +581,11 @@ if __name__ == "__main__":
     parser = get_parser()
     parser = Trainer.add_argparse_args(parser)
 
+    ckpt = None
+
     opt, unknown = parser.parse_known_args()
     if opt.name and opt.resume:
+        # TODO: Deprecated since version v1.5: resume_from_checkpoint is deprecated in v1.5 and will be removed in v2.0. Please pass the path to Trainer.fit(..., ckpt_path=...) instead.
         raise ValueError(
             "-n/--name and -r/--resume cannot be specified both."
             "If you want to resume training in a new log folder, "
@@ -596,7 +609,8 @@ if __name__ == "__main__":
             logdir = opt.resume.rstrip("/")
             ckpt = os.path.join(logdir, "checkpoints", "last.ckpt")
 
-        opt.resume_from_checkpoint = ckpt
+        # Deprecated since version v1.5: resume_from_checkpoint is deprecated in v1.5 and will be removed in v2.0. Please pass the path to Trainer.fit(..., ckpt_path=...) instead.
+        # opt.ckpt_path = ckpt
         # ["xxx/yy/configs/aaa-lightning.yaml",
         #  "xxx/yy/configs/aaa-project.yaml"]
         base_configs = sorted(glob.glob(os.path.join(logdir, "configs/*.yaml")))
@@ -744,7 +758,6 @@ if __name__ == "__main__":
                 "target": "main.VideoLogger",
                 "params": {
                     "batch_frequency": 1000,
-                    "max_videos": 4,
                     "clamp": True,
                     "rescale": True,
                 }
@@ -786,10 +799,10 @@ if __name__ == "__main__":
             default_callbacks_cfg.update(default_metrics_over_trainsteps_ckpt_dict)
 
         callbacks_cfg = OmegaConf.merge(default_callbacks_cfg, callbacks_cfg)
-        if 'ignore_keys_callback' in callbacks_cfg and hasattr(trainer_opt, 'resume_from_checkpoint'):
-            callbacks_cfg.ignore_keys_callback.params['ckpt_path'] = trainer_opt.resume_from_checkpoint
-        elif 'ignore_keys_callback' in callbacks_cfg:
-            del callbacks_cfg['ignore_keys_callback']
+        # if 'ignore_keys_callback' in callbacks_cfg and hasattr(trainer_opt, 'resume_from_checkpoint'):
+        #     callbacks_cfg.ignore_keys_callback.params['ckpt_path'] = trainer_opt.resume_from_checkpoint
+        # elif 'ignore_keys_callback' in callbacks_cfg:
+        #     del callbacks_cfg['ignore_keys_callback']
 
         trainer_kwargs["callbacks"] = [instantiate_from_config(callbacks_cfg[k]) for k in callbacks_cfg]
 
@@ -853,12 +866,12 @@ if __name__ == "__main__":
         # run
         if opt.train:
             try:
-                trainer.fit(model, data)
+                trainer.fit(model, data, ckpt_path=ckpt)
             except Exception:
                 # melk()
                 raise
         if not opt.no_test and not trainer.interrupted:
-            # trainer.test(model, data)
+            trainer.test(model, data, ckpt_path=ckpt)
             # trainer.validate(model, data)
             pass
     except Exception:
@@ -893,8 +906,8 @@ if __name__ == "__main__":
 # [for resume from a checkpoint like]
 # CUDA_VISIBLE_DEVICES=0,1 python main.py --resume logs_training/20230220-213917_kth-ldm-vq-f4 --train --gpus 0,1
 
-# [for evaluation like] wait for edit
-# CUDA_VISIBLE_DEVICES=0,1 python main.py --resume logs_training/20230220-213917_kth-ldm-vq-f4 --gpus 0,1
+# [for test(sampling) like] wait for edit
+# CUDA_VISIBLE_DEVICES=0 python main.py --resume logs_training/20230315-034951_kth-ldm-vq-f4 --gpus 0,
 
 # 主函数main.py
 # 训练和推理进入到./ldm/models/diffusion/ddpm.py

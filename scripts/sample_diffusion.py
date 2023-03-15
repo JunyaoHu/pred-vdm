@@ -300,7 +300,8 @@ if __name__ == "__main__":
         ckpt = os.path.join(logdir, "checkpoints", "last.ckpt")
 
     # ["xxx/yy/configs/aaa.yaml"]
-    base_configs = sorted(glob.glob(os.path.join(logdir, "config.yaml")))
+    # base_configs = sorted(glob.glob(os.path.join(logdir, "config.yaml")))
+    base_configs = sorted(glob.glob(os.path.join(logdir, "configs/*.yaml")))
     opt.base = base_configs
 
     # config management by OmegaConf
@@ -330,14 +331,14 @@ if __name__ == "__main__":
 
     print("logging to:")
     logdir = os.path.join(logdir, "samples", f"{global_step:08}")
-    video_logdir = os.path.join(logdir, "video")
-    numpy_logdir = os.path.join(logdir, "numpy")
+    video_logdir = os.path.join(logdir, "videos")
+    # numpy_logdir = os.path.join(logdir, "numpy")
 
     os.makedirs(video_logdir)
-    os.makedirs(numpy_logdir)
+    # os.makedirs(numpy_logdir)
     print(logdir)
     print(video_logdir)
-    print(numpy_logdir)
+    # print(numpy_logdir)
     print(75 * "=")
 
     # write config out
@@ -349,7 +350,7 @@ if __name__ == "__main__":
     
     run(model, video_logdir, eta=opt.eta,
         vanilla=opt.vanilla_sample,  n_samples=opt.n_samples, custom_steps=opt.custom_steps,
-        batch_size=opt.batch_size, nplog=numpy_logdir)
+        batch_size=opt.batch_size)
 
     # import cv2
     # x1 = cv2.imread('icon.jpg', 1)
@@ -368,3 +369,4 @@ if __name__ == "__main__":
     # CUDA_VISIBLE_DEVICES=0,1 python scripts/sample_diffusion.py -r models/ldm/celeba256/model.ckpt -l ./logs_sampling -n 20
     # CUDA_VISIBLE_DEVICES=0 python scripts/sample_diffusion.py -r models/ldm/kth_64/checkpoints/last.ckpt -l ./logs_sampling -n 20
     # CUDA_VISIBLE_DEVICES=0 python scripts/sample_diffusion.py -r models/ldm/kth_64/checkpoints/last.ckpt -l ./logs_sampling -n 256 --batch_size 256 --custom_steps 200
+    # CUDA_VISIBLE_DEVICES=0,1 python scripts/sample_diffusion.py -r logs_training/20230315-034951_kth-ldm-vq-f4 -l ./logs_sampling -n 8 --batch_size 8 --custom_steps 200
