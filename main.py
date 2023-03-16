@@ -218,7 +218,7 @@ class DataModuleFromConfig(pl.LightningDataModule):
                           num_workers=self.num_workers, 
                           worker_init_fn=init_fn,
                           shuffle=shuffle,
-                          persistent_workers=True
+                          persistent_workers=False
                           )
 
     def _val_dataloader(self, shuffle=False):
@@ -236,7 +236,7 @@ class DataModuleFromConfig(pl.LightningDataModule):
                           num_workers=self.num_workers,
                           worker_init_fn=init_fn,
                           shuffle=shuffle,
-                          persistent_workers=True
+                          persistent_workers=False
                           )
 
     def _test_dataloader(self, shuffle=False):
@@ -254,7 +254,7 @@ class DataModuleFromConfig(pl.LightningDataModule):
                           num_workers=self.num_workers, 
                           worker_init_fn=init_fn, 
                           shuffle=shuffle,
-                          persistent_workers=True
+                          persistent_workers=False
                           )
 
     # def _predict_dataloader(self, shuffle=False):
@@ -725,7 +725,7 @@ if __name__ == "__main__":
             }
         }
         if hasattr(model, "monitor"):
-            # Monitoring val/loss_simple_ema as checkpoint metric.
+            # Monitoring val/loss_ema as checkpoint metric.
             print(f"Monitoring {model.monitor} as checkpoint metric.")
             default_modelckpt_cfg["params"]["monitor"] = model.monitor
 

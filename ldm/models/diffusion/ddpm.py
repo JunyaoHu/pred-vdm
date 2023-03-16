@@ -64,8 +64,9 @@ class DDPM(pl.LightningModule):
                  ckpt_path=None,
                  ignore_keys=[],
                  load_only_unet=False,
-                 monitor="val/loss",
+                 monitor="val/loss_ema",
                  use_ema=True,
+                 ema_rate=0.999,
                  first_stage_key="video",
                  image_size=256,
                  channels=3,
@@ -101,8 +102,9 @@ class DDPM(pl.LightningModule):
         self.model = DiffusionWrapper(unet_config, conditioning_key)
         count_params(self.model, verbose=True)
         self.use_ema = use_ema
+        self.ema_rate = ema_rate
         if self.use_ema:
-            self.model_ema = LitEma(self.model)
+            self.model_ema = LitEma(self.model, decay=self.ema_rate)
             print(f"Keeping EMAs of {len(list(self.model_ema.buffers()))}.")
 
         self.use_scheduler = scheduler_config is not None
@@ -1430,7 +1432,7 @@ class LatentDiffusion(DDPM):
                                   mask=mask, x0=x0)
 
     @torch.no_grad()
-    def sample_log(self, cond, ddim, ddim_steps, x_T, shape, **kwargs):
+    def sample_log(self, cond, ddim, ddim_steps, ddim_every_steps, x_T, shape, **kwargs):
         # rank_zero_info("sample_log autogression")
         # x_T [bs, total*ch, h_latent, w_latent]
 
@@ -1451,7 +1453,7 @@ class LatentDiffusion(DDPM):
             z_noisy     = torch.randn(z_pred.shape[0], self.frame_num.pred*self.channels, self.image_size, self.image_size).to(self.device)
             if ddim:
                 ddim_sampler = DDIMSampler(self)
-                tmp_samples, tmp_intermediates = ddim_sampler.sample(ddim_steps, batch_size, shape, conditioning=z_cond, verbose=False, x_T=z_noisy, log_every_t=50, clip_denoised=self.clip_denoised, **kwargs)
+                tmp_samples, tmp_intermediates = ddim_sampler.sample(ddim_steps, batch_size, shape, conditioning=z_cond, verbose=False, x_T=z_noisy, log_every_t=ddim_every_steps, clip_denoised=self.clip_denoised, **kwargs)
                 z_result = torch.cat([z_result, tmp_samples], dim=1)
                 z_intermediates.append(torch.stack(tmp_intermediates['x_inter'])) # 'pred_x0' is DDIM's predicted x0
             else:
@@ -1515,7 +1517,7 @@ class LatentDiffusion(DDPM):
 
 
     @torch.no_grad()
-    def log_videos(self, batch, split, save_video_num, calculate_video_num, sample=True, ddim_steps=200, ddim_eta=1., return_keys=None,use_ddim = True,
+    def log_videos(self, batch, split, save_video_num, calculate_video_num, sample=True, ddim_steps=200, ddim_every_steps=50, ddim_eta=1., return_keys=None,use_ddim = True,
                    quantize_denoised=True, inpaint=True, plot_denoise_rows=True, plot_progressive_rows=True,
                    plot_diffusion_rows=True, **kwargs):
         
@@ -1598,7 +1600,7 @@ class LatentDiffusion(DDPM):
             # rank_zero_info(f"-------------------- z -- min max mean {z.min()} {z.max()} {z.mean()}")
             start_time = time.time()
             with self.ema_scope("Plotting denoise"):
-                tmp_samples, tmp_z_denoise_row = self.sample_log(x_T=z, cond=c, ddim=use_ddim, ddim_steps=ddim_steps, eta=ddim_eta, shape=shape)
+                tmp_samples, tmp_z_denoise_row = self.sample_log(x_T=z, cond=c, ddim=use_ddim, ddim_steps=ddim_steps, ddim_every_steps=ddim_every_steps, eta=ddim_eta, shape=shape)
             tmp_samples = tmp_samples.reshape(z.shape[0], -1, 3, z.shape[-2], z.shape[-1])
 
             rank_zero_info(f"---------- tmp_samples -- min max mean {tmp_samples.min()} {tmp_samples.max()} {tmp_samples.mean()}")
@@ -1698,7 +1700,14 @@ class LatentDiffusion(DDPM):
         if self.learn_logvar:
             print('Diffusion model optimizing logvar')
             params.append(self.logvar)
-        opt = torch.optim.AdamW(params, lr=lr)
+        opt = torch.optim.AdamW(
+            params, 
+            lr=lr,
+            betas=(0.9, 0.999),
+            eps=1.0e-08,
+            weight_decay=0.0,
+            amsgrad=False
+        )
         if self.use_scheduler:
             default_scheduler_cfg = {
                 "target": "ldm.lr_scheduler.LambdaLinearScheduler",

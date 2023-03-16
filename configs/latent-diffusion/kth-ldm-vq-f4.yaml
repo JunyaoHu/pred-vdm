@@ -1,5 +1,5 @@
 model:
-  base_learning_rate: 2e-06 # 4e-07
+  base_learning_rate: 1.5625e-6 # 2e-06 # 4e-07
   target: ldm.models.diffusion.ddpm.LatentDiffusion
   params:
     # it should be ['x0' or 'eps']
@@ -13,14 +13,13 @@ model:
     scale_factor: 0.2
     clip_denoised: True
     
-    # scheduler_config: 
-    #   target: ldm.lr_scheduler.LambdaLinearScheduler
-    #   params:
-    #     # 2000 warmup steps
-    #     warm_up_steps: [2000]
-    #     f_start: [1.e-6]
-    #     f_max: [1.]
-    #     f_min: [1.]
+    scheduler_config: 
+      target: ldm.lr_scheduler.LambdaLinearScheduler
+      params:
+        warm_up_steps: [5000]
+        f_start: [1.e-6]
+        f_max: [1.]
+        f_min: [1.]
 
     first_stage_key: video
 
@@ -97,12 +96,14 @@ model:
     #     conditional_key: objects_bbox
 
     image_size: 16
-    VQ_batch_size: 64 #256
+    VQ_batch_size: 256
     channels: 3
     frame_num:
       cond: 10
       pred: 5
     monitor: val/loss_ema
+    use_ema: True
+    ema_rate: 0.999
 
     unet_config:
       target: ldm.modules.diffusionmodules.openaimodel.UNetModel
@@ -114,22 +115,21 @@ model:
         out_channels: 15
         model_channels: 96
         attention_resolutions:
-        # note: this isn\t actually the resolution but
-        # the downsampling factor, i.e. this corresnponds to
-        # attention on spatial resolution 8,16,32, as the
-        # spatial reolution of the latents is 64 for f4
-        - 4
+        # note: this isn\t actually the resolution but the downsampling factor.
         - 2
-        - 1
+        - 4
+        - 8
         num_res_blocks: 2
         channel_mult:
         - 1
         - 2
+        - 3
         - 4
         num_head_channels: 96
         # use_spatial_transformer: true
         # transformer_depth: 1
         # context_dim: 408
+        dropout: 0.1
         # ps: [context_dim] should be equal to the [embed_dim] of cond_stage_config
         # use_scale_shift_norm: True
         # resblock_updown: True
@@ -156,35 +156,33 @@ model:
           dropout: 0.0
         lossconfig:
           target: torch.nn.Identity
-    
-    
 
 data:
   target: main.DataModuleFromConfig
   params:
     batch_size: 
-      train: 32 #64
-      validation: 64
+      train: 64
+      validation: 100
       test: 256
     num_workers: 8
     wrap: false
     train:
       target: data.mydataset.KTH
       params:
-        data_dir: /home/ubuntu15/zzc/data/KTH/pred-vdm/processed/train
-        frames_per_sample: 20
+        data_dir: /home/ubuntu11/zzc/data/KTH/pred-vdm/processed/train
+        frames_per_sample: 15
     validation:
       target: data.mydataset.KTH
       params:
-        data_dir: /home/ubuntu15/zzc/data/KTH/pred-vdm/processed/valid
-        frames_per_sample: 40
-        total_videos: 64
+        data_dir: /home/ubuntu11/zzc/data/KTH/pred-vdm/processed/valid
+        frames_per_sample: 30
+        total_videos: 100
     test:
       target: data.mydataset.KTH
       params:
-        data_dir: /home/ubuntu15/zzc/data/KTH/pred-vdm/processed/valid
+        data_dir: /home/ubuntu11/zzc/data/KTH/pred-vdm/processed/valid
         frames_per_sample: 40
-        total_videos: 64
+        total_videos: 256
 
 lightning:
   callbacks:
@@ -195,13 +193,16 @@ lightning:
         calculate_video_num: 256
         save_video_num: 8
         increase_log_steps: False
+        log_videos_kwargs:
+          ddim_steps: 100
+          ddim_every_steps: 10
 
   trainer:
     benchmark: True
     # 梯度累积
-    accumulate_grad_batches: 2
+    # accumulate_grad_batches: 2
     # Stop training after training step up to [max_steps]. Disabled by default (-1), it will go on forever until interrupted
-    max_steps: 200000
+    max_steps: 400000
     # log_steps for train_loss (because its log_dict\log is on_step=True), default (50),
     log_every_n_steps: 100
     # 提前校验，避免校验时出错导致浪费时间
@@ -209,3 +210,5 @@ lightning:
     num_sanity_val_steps: 0
     # 每n个epoch校验一次，即自动调用 validation_step() 函数, 默认为1
     check_val_every_n_epoch: 200
+    # 梯度裁剪
+    gradient_clip_val: 1.0
