@@ -126,6 +126,7 @@ class HDF5InterfaceDataset(Dataset):
 
         for k in self.labels:
             video[k] = self.labels[k][i]
+
         return video
 
 

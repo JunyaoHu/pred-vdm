@@ -101,15 +101,19 @@ class KTH(DatasetBase):
 if __name__ == "__main__":
 
     #################### KTH ########################
-    dataset_root = "/home/ubuntu15/zzc/data/KTH/pred-vdm/processed"
+    dataset_root = "/home/ubuntu11/zzc/data/KTH/pred-vdm/processed"
     dataset1 = KTH(f"{dataset_root}/train", 20)
     print(len(dataset1))
 
     dataset2 = KTH(f"{dataset_root}/valid", 50, 256)
     print(len(dataset2))
 
-    print(dataset1[len(dataset2)-1]['video'].shape)
-    print(dataset2[len(dataset2)-1]['video'].shape)
+    # random test
+    for i in range(50):
+        dataset1[0]['video']
+
+    # print(dataset1[len(dataset2)-1]['video'].shape)
+    # print(dataset2[len(dataset2)-1]['video'].shape)
 
     import mediapy as media
     video = dataset2[len(dataset2)-1]['video']

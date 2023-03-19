@@ -78,8 +78,8 @@ class DDPM(pl.LightningModule):
                  cosine_s=8e-3,
                  given_betas=None,
                  v_posterior=0.,  # weight for choosing posterior variance as sigma = (1-v) * beta_tilde + v * beta
-                 original_elbo_weight=0.2,
-                 l_eps_weight=0.8,
+                 original_elbo_weight=0.0,
+                 l_eps_weight=1.0,
                  conditioning_key=None,
                  parameterization="eps",  # all assuming fixed variance schedules
                  scheduler_config=None,
@@ -1188,7 +1188,10 @@ class LatentDiffusion(DDPM):
             start_idx   = self.frame_num.pred*i*self.channels
             end_idx     = self.frame_num.pred*(i+1)*self.channels
             # TODO: think about how to solve the z_pred_init [(49-10)/5] = 8, we input need padding for it
-            z_cond      = z_result[:, -self.frame_num.cond*self.channels:].clamp(-1.,1.)
+            if self.clip_denoised:
+                z_cond  = z_result[:, -self.frame_num.cond*self.channels:].clamp(-1.,1.)
+            else:
+                z_cond  = z_result[:, -self.frame_num.cond*self.channels:]
             z_pred      = z_start[:, start_idx:end_idx]
             tmp_noise   = default(noise, lambda: torch.randn_like(z_pred)).to(self.device)
             z_noisy     = self.q_sample(x_start=z_pred, t=t, noise=tmp_noise)
@@ -1206,12 +1209,14 @@ class LatentDiffusion(DDPM):
         
         z_noise     = z_noise   [:, self.frame_num.cond*self.channels : self.frame_num.cond*self.channels+z_start.shape[1]]
         eps_result  = eps_result[:, self.frame_num.cond*self.channels : self.frame_num.cond*self.channels+z_start.shape[1]]
+        # z_result    = z_result  [:, self.frame_num.cond*self.channels : self.frame_num.cond*self.channels+z_start.shape[1]]
         
         loss_dict = {}
         prefix = 'train' if self.training else 'val'
 
         # rank_zero_info("get loss")
         # loss_latent (eps) ------------------------------------------------
+        # loss_eps = self.get_loss(z_result, z_noise, mean=False).sum([1, 2, 3])
         loss_eps = self.get_loss(eps_result, z_noise, mean=False).sum([1, 2, 3])
         loss_dict.update({f'{prefix}/loss_eps': loss_eps.mean()})
 

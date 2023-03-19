@@ -218,7 +218,7 @@ class DataModuleFromConfig(pl.LightningDataModule):
                           num_workers=self.num_workers, 
                           worker_init_fn=init_fn,
                           shuffle=shuffle,
-                          persistent_workers=False
+                          persistent_workers=True
                           )
 
     def _val_dataloader(self, shuffle=False):
@@ -236,7 +236,7 @@ class DataModuleFromConfig(pl.LightningDataModule):
                           num_workers=self.num_workers,
                           worker_init_fn=init_fn,
                           shuffle=shuffle,
-                          persistent_workers=False
+                          persistent_workers=True
                           )
 
     def _test_dataloader(self, shuffle=False):
@@ -254,7 +254,7 @@ class DataModuleFromConfig(pl.LightningDataModule):
                           num_workers=self.num_workers, 
                           worker_init_fn=init_fn, 
                           shuffle=shuffle,
-                          persistent_workers=False
+                          persistent_workers=True
                           )
 
     # def _predict_dataloader(self, shuffle=False):
@@ -907,7 +907,7 @@ if __name__ == "__main__":
 # CUDA_VISIBLE_DEVICES=0,1 python main.py --resume logs_training/20230220-213917_kth-ldm-vq-f4 --train --gpus 0,1
 
 # [for test(sampling) like] wait for edit
-# CUDA_VISIBLE_DEVICES=0 python main.py --resume logs_training/20230315-034951_kth-ldm-vq-f4 --gpus 0,
+# CUDA_VISIBLE_DEVICES=0 python main.py --resume logs_training/20230317-082651_kth-ldm-vq-f4 --gpus 0,
 
 # 主函数main.py
 # 训练和推理进入到./ldm/models/diffusion/ddpm.py
