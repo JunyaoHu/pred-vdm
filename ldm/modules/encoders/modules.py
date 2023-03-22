@@ -103,8 +103,9 @@ class BERTEmbedder(AbstractEncoder):
         # output of length 77
         return self(text)
 
-class MotionStateTokenizer(AbstractEncoder):
-    """ Uses a MotionStateTokenizer tokenizer by optical flow and so on."""
+   
+class MotionStateEmbedder(AbstractEncoder):
+    """Uses the Motion State tokenizr model and add some transformer encoder layers"""
     def __init__(self, t_length, embed_dim, device="cuda"):
         super().__init__()
         from models.motion_state.motion_state import motion_state
@@ -116,30 +117,31 @@ class MotionStateTokenizer(AbstractEncoder):
     def forward(self, video):
         batch_encoding = self.tokenizer(video, self.t_length, self.embed_dim)
         tokens = batch_encoding.to(self.device)
-        return tokens
-
-    @torch.no_grad()
-    def encode(self, video):
-        tokens = self(video)
-        return tokens
-
-    def decode(self, video):
-        return video
-    
-class MotionStateEmbedder(AbstractEncoder):
-    """Uses the Motion State tokenizr model and add some transformer encoder layers"""
-    def __init__(self, t_length, embed_dim, device="cuda"):
-        super().__init__()
-        self.tknz_fn = MotionStateTokenizer(t_length=t_length, embed_dim=embed_dim)
-        self.device = device
-
-    def forward(self, video):
-        tokens = self.tknz_fn(video)#.to(self.device)
         # tokens [bs, 20, 408]
         return tokens
 
     def encode(self, video):
         return self(video)
+
+class OpticlaFlowEmbedder(AbstractEncoder):
+    def __init__(self, frame_num_cond, device="cuda"):
+        super().__init__()
+        self.frame_num_cond = frame_num_cond
+        self.device = device
+        self.downsample = nn.Sequential(
+            nn.Conv2d((frame_num_cond-1)*2, self.frame_num_cond*2, 3, stride=2, padding=1),
+            nn.Conv2d(self.frame_num_cond*2, self.frame_num_cond, 3, stride=2, padding=1),
+        ) 
+
+    def forward(self, optical):
+        import einops
+        tokens = einops.rearrange(optical, "b t h w c -> b (t c) h w")
+        tokens = self.downsample(tokens)
+        # tokens [bs, 9, 2, 64, 64] -> [bs, 18, 64, 64] -> [bs, 20, 32, 32]-> [bs, 10, 16, 16]
+        return tokens
+
+    def encode(self, optical):
+        return self(optical)
 
 
 class SpatialRescaler(nn.Module):

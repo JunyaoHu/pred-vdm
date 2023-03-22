@@ -23,21 +23,19 @@ model:
 
     first_stage_key: video
 
-    cond_stage_key: condition_frames
+    cond_stage_key: condition_frames_optical_flow
     # cond_stage_key: class_label
 
     # 1. if     caption, coordinates_bbox
     #               -> batch
     # 2. elif   class_label
     #               -> batch[cond_key]
-    # 4. elif   condition_frames_motion_state
-    #               -> x[:,:self.frame_num.cond]
-    # 5. elif   condition_frames
-    #               -> x[:,:self.frame_num.cond]
+    # 4. elif   "condition_frames_optical_flow","condition_frames_motion_state", "condition_frames", "condition_frames_latent"
+    #               -> batch[cond_key][:,:self.frame_num.cond]
     # 3. else   image, nix, LR_image, masked_image, segmentation，objects_bbox，depth，bbox_img
     #               -> super().get_input(batch, cond_key).to(self.device)
     
-    cond_stage_trainable: false
+    cond_stage_trainable: true
 
     # conditioning_key in [None, 'concat', 'crossattn', 'hybrid', 'adm']
     # conditioning_key: crossattn
@@ -46,11 +44,16 @@ model:
     # cond_stage_config: __is_unconditional__
     # cond_stage_config: __is_first_stage__
     
+    # cond_stage_config:
+    #   target: ldm.modules.encoders.modules.MotionStateEmbedder
+    #   params:
+    #     t_length: 20
+    #     embed_dim: 408
+
     cond_stage_config:
-      target: ldm.modules.encoders.modules.MotionStateEmbedder
+      target: ldm.modules.encoders.modules.OpticlaFlowEmbedder
       params:
-        t_length: 20
-        embed_dim: 408
+        frame_num_cond: 10
 
     # cond_stage_config:
     #   target: ldm.modules.encoders.modules.ClassEmbedder
@@ -111,7 +114,7 @@ model:
         dims: 2
 
         image_size: 16
-        in_channels: 45
+        in_channels: 25
         out_channels: 15
         model_channels: 96
         attention_resolutions:

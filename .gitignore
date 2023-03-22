@@ -3,7 +3,7 @@
 *.pt
 *.zip
 *.egg-info/
-logs_training
+
 v.mp4
 models/optical_flow/opticalflow.py
 1.py
@@ -14,3 +14,6 @@ data/KTH/raw/
 videos/val/
 .vscode
 lightning_logs
+logs_training/*/checkpoints
+logs_training/*/videos
+logs_training/*/wandb

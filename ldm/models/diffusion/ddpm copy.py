@@ -553,12 +553,7 @@ class LatentDiffusion(DDPM):
             print("### USING STD-RESCALING ###")
             x = super().get_input(batch, self.first_stage_key)
             x = x.to(self.device)
-            encoder_posterior = []
-            for i in range(len(x)):
-                encoder_posterior.append(self.encode_first_stage(x[i]))
-            encoder_posterior = torch.stack(encoder_posterior)
-            encoder_posterior = rearrange(encoder_posterior, 'b t c h w -> b (t c) h w')
-            z = self.get_first_stage_encoding(encoder_posterior).detach()
+            z = self.video_batch_encode(x)
             del self.scale_factor
             self.register_buffer('scale_factor', 1. / z.flatten().std())
             print(f"setting self.scale_factor to {self.scale_factor}")
@@ -743,6 +738,30 @@ class LatentDiffusion(DDPM):
 
         return fold, unfold, normalization, weighting
 
+    def video_batch_encode(self, x):
+        if x.shape[-3] == 1:
+            x = repeat(x, 'b t c h w -> b t (n c) h w', n = 3)
+        z = []
+        tmp_z = rearrange(x, 'b t c h w -> (b t) c h w')
+        for i in range(ceil(tmp_z.shape[0]/self.VQ_batch_size)):
+            z.append(self.encode_first_stage(tmp_z[i*self.VQ_batch_size:(i+1)*self.VQ_batch_size]))
+        del tmp_z
+        z = torch.cat(z)
+        z = z.reshape(x.shape[0], -1, self.channels, self.image_size, self.image_size)
+        z = rearrange(z, 'b t c h w -> b (t c) h w')
+        return z
+
+    def video_batch_decode(self, z):
+        tmp_x_rec = z.reshape(z.shape[0], -1, self.channels, self.image_size, self.image_size)
+        tmp_x_rec = rearrange(tmp_x_rec, 'b t c h w -> (b t) c h w')
+        x_rec = []
+        for i in range(ceil(tmp_x_rec.shape[0]/self.VQ_batch_size)):
+            x_rec.append(self.decode_first_stage(tmp_x_rec[i*self.VQ_batch_size:(i+1)*self.VQ_batch_size]))
+        del tmp_x_rec
+        x_rec = torch.cat(x_rec)
+        x_rec = x_rec.reshape(z.shape[0], -1, self.channels, x_rec.shape[2], x_rec.shape[3])
+        return x_rec
+
     @torch.no_grad()
     def get_input(self, batch, key, return_first_stage_outputs=False, force_c_encode=False,
                   cond_key=None, return_original_cond=False, bs=None):
@@ -780,23 +799,16 @@ class LatentDiffusion(DDPM):
         if bs is not None:
             x = x[:bs]
 
-        # TODO: 为了获取cond frames的encode 和mcvd对齐 暂时注释
-        # x = x[:,:self.frame_num.pred].to(self.device)
+        x = x[:,self.frame_num.cond:].to(self.device)
         if x.shape[2] == 1:
             x = repeat(x, "b t c h w -> b t (3 c) h w")
 
-        # x torch.Size([64, 15, 1->3, 64, 64])
+        # x torch.Size([64, 5, 1->3, 64, 64])
 
         # it is based on LDM image encode process
         # start = time.time()
-        z = []
-        tmp_z = rearrange(x, 'b t c h w -> (b t) c h w')
-        for i in range(ceil(tmp_z.shape[0]/self.VQ_batch_size)):
-            z.append(self.encode_first_stage(tmp_z[i*self.VQ_batch_size:(i+1)*self.VQ_batch_size]))
-        del tmp_z
-        z = torch.cat(z)
-        z = z.reshape(x.shape[0], -1, self.channels, self.image_size, self.image_size)
-        z = rearrange(z, 'b t c h w -> b (t c) h w')
+
+        z = self.video_batch_encode(x)
         z = self.get_first_stage_encoding(z).detach()
         # rank_zero_info(f"get input encode done         {time.time() - start}")
         # about 0.18 seconds
@@ -810,12 +822,13 @@ class LatentDiffusion(DDPM):
                     xc = batch[cond_key]
                 elif cond_key == 'class_label':
                     xc = batch
-                # condition_frames_motion_state this way
-                elif cond_key == "condition_frames_motion_state":
-                    xc = x[:,:self.frame_num.cond]
-                # condition_frames
-                elif cond_key == "condition_frames":
-                    xc = x[:,:self.frame_num.cond]
+                elif cond_key in [
+                    "condition_frames_latent", 
+                    "condition_frames_optical_flow",
+                    "condition_frames_motion_state", 
+                    "condition_frames"
+                ]:
+                    xc = batch[self.first_stage_key][:,:self.frame_num.cond]
                 else:
                     xc = super().get_input(batch, cond_key).to(self.device)
             else:
@@ -826,14 +839,16 @@ class LatentDiffusion(DDPM):
                 if isinstance(xc, dict) or isinstance(xc, list):
                     c = self.get_learned_conditioning(xc)
                 else:
-                    # tensor this way
-                    # TODO: 为了直接使用条件帧的办法，临时措施
-                    if cond_key == "condition_frames":
-                        c = z[:,:self.frame_num.cond*self.channels].to(self.device)
+                    if cond_key == "condition_frames_latent":
+                        c = self.video_batch_encode(xc)
                     else:
                         c = self.get_learned_conditioning(xc.to(self.device))
             else:
-                c = xc
+                if cond_key == "condition_frames_optical_flow":
+                    from models.optical_flow.optical_flow import optical_flow
+                    c = optical_flow(xc).to(self.device)
+                else:
+                    c = xc
 
             if bs is not None:
                 c = c[:bs]
@@ -850,11 +865,6 @@ class LatentDiffusion(DDPM):
             #     pos_x, pos_y = self.compute_latent_shifts(batch)
             #     c = {'pos_x': pos_x, 'pos_y': pos_y}
 
-        # z torch.Size([64, 5*3, 16, 16])
-        z = z[:,self.frame_num.cond*self.channels:].to(self.device)
-        # x torch.Size([64, 5, 3, 64, 64])
-        x = x[:,self.frame_num.cond:].to(self.device)
-        
         out = [z, c]
 
         if return_first_stage_outputs:
@@ -875,22 +885,15 @@ class LatentDiffusion(DDPM):
             x_rec (prepare for output)
             """
             # start = time.time()
-            tmp_x_rec = z.reshape(z.shape[0], -1, self.channels, self.image_size, self.image_size)
-            tmp_x_rec = rearrange(tmp_x_rec, 'b t c h w -> (b t) c h w')
-            x_rec = []
-            for i in range(ceil(tmp_x_rec.shape[0]/self.VQ_batch_size)):
-                x_rec.append(self.decode_first_stage(tmp_x_rec[i*self.VQ_batch_size:(i+1)*self.VQ_batch_size]))
-            del tmp_x_rec
-            x_rec = torch.cat(x_rec)
-            x_rec = x_rec.reshape(x.shape[0], -1, self.channels, x.shape[3], x.shape[4])
+            x_rec = self.video_batch_decode(z)
             # rank_zero_info(f"x_rec           min max mean {x_rec.min()} {x_rec.max()} {x_rec.mean()}")
             # rank_zero_info(f"get input decode done         {time.time() - start}")
             # about 0.18 seconds
             out.extend([x, x_rec])
 
         if return_original_cond:
-            if xc.shape[2] == 1:
-                xc = repeat(xc, "b t c h w -> b t (3 c) h w")
+            if xc.shape[-3] == 1:
+                xc = repeat(xc, 'b t c h w -> b t (n c) h w', n =3)
             out.append(xc)
         
         # z: latent [b, self.frame_num.train_valid_total*channels, h_latent, h_latent]
@@ -1211,12 +1214,14 @@ class LatentDiffusion(DDPM):
         
         z_noise     = z_noise   [:, self.frame_num.cond*self.channels : self.frame_num.cond*self.channels+z_start.shape[1]]
         eps_result  = eps_result[:, self.frame_num.cond*self.channels : self.frame_num.cond*self.channels+z_start.shape[1]]
+        # z_result    = z_result  [:, self.frame_num.cond*self.channels : self.frame_num.cond*self.channels+z_start.shape[1]]
         
         loss_dict = {}
         prefix = 'train' if self.training else 'val'
 
         # rank_zero_info("get loss")
         # loss_latent (eps) ------------------------------------------------
+        # loss_eps = self.get_loss(z_result, z_noise, mean=False).sum([1, 2, 3])
         loss_eps = self.get_loss(eps_result, z_noise, mean=False).sum([1, 2, 3])
         loss_dict.update({f'{prefix}/loss_eps': loss_eps.mean()})
 
@@ -1615,12 +1620,7 @@ class LatentDiffusion(DDPM):
             log_metrics[f'{split}/z0_min'] = tmp_samples.min() 
             log_metrics[f'{split}/z0_max'] = tmp_samples.max() 
 
-            tmp_samples = rearrange(tmp_samples, 'b t c h w -> (b t) c h w')[:]
-            x_samples = []
-            for i in range(ceil(tmp_samples.shape[0]/self.VQ_batch_size)):
-                x_samples.append(self.decode_first_stage(tmp_samples[i*self.VQ_batch_size:(i+1)*self.VQ_batch_size]))
-            x_samples = torch.cat(x_samples)
-            x_samples = x_samples.reshape(x.shape[0], -1, self.channels, x.shape[3], x.shape[4])
+            x_samples = self.video_batch_decode(tmp_samples)
 
             log_metrics[f'{split}/x0_min'] = x_samples.min() 
             log_metrics[f'{split}/x0_max'] = x_samples.max() 
@@ -1633,14 +1633,15 @@ class LatentDiffusion(DDPM):
             autogression_num = ceil( pred_length / self.frame_num.pred)
             log_metrics[f"{split}/used_time_per_autogression"] = (time.time() - start_time) / autogression_num
 
-            videos1 = x_samples.clamp(-1.,1.) # [:,self.frame_num.cond:]
-            videos2 = torch.cat([xc,x],dim=1).clamp(-1.,1.)
+            videos1 = x_samples.clamp(-1.,1.)
+            print("xc.shape, x.shape", xc.shape, x.shape)
+            videos2 = torch.concat([xc,x],dim=1).clamp(-1.,1.)
             videos1 = (videos1+1.)/2.
             videos2 = (videos2+1.)/2.
 
             if videos1.shape[1] >= 10: 
                 fvd = calculate_fvd1(videos1, videos2, self.device)
-                log_metrics[f'{split}/fvd-cond{self.frame_num.cond}pred{pred_length}']  = fvd
+                log_metrics[f'{split}/fvd/cond{self.frame_num.cond}pred{pred_length}']  = fvd
 
             videos1 = videos1[:,self.frame_num.cond:]
             videos2 = videos2[:,self.frame_num.cond:]
