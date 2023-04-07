@@ -137,18 +137,21 @@ data:
     train:
       target: data.mydataset.KTH
       params:
-        data_dir: /home/ubuntu11/zzc/data/KTH/pred-vdm/processed/train
+        data_dir: /home/ubuntu15//zzc/data/KTH/pred-vdm/processed/train
+        # data_dir: /home/ubuntu11/zzc/data/KTH/pred-vdm/processed/train
         frames_per_sample: 15
     validation:
       target: data.mydataset.KTH
       params:
-        data_dir: /home/ubuntu11/zzc/data/KTH/pred-vdm/processed/valid
+        data_dir: /home/ubuntu15//zzc/data/KTH/pred-vdm/processed/valid
+        # data_dir: /home/ubuntu11/zzc/data/KTH/pred-vdm/processed/valid
         frames_per_sample: 30
         total_videos: 128
     test:
       target: data.mydataset.KTH
       params:
-        data_dir: /home/ubuntu11/zzc/data/KTH/pred-vdm/processed/valid
+        data_dir: /home/ubuntu15//zzc/data/KTH/pred-vdm/processed/valid
+        # data_dir: /home/ubuntu11/zzc/data/KTH/pred-vdm/processed/valid
         frames_per_sample: 40
         total_videos: 256
 
