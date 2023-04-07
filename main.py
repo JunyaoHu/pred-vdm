@@ -361,18 +361,18 @@ class VideoLogger(Callback):
         # for pytorch-lightning > 1.6.0
         tag = f"{split}"
         # columns = ["input","recon","z_origin","z_sample","ddim200","ddim200_quantized", "ddpm1000", "diffusion_row", "ddim200_row", "ddpm1000_row"]
-        columns = ["input", "recon", "z_origin", "z_sample", "condition", "ddim200", "ddim200_row"]
+        columns = ["condition", "x_origin", "recon", "z_origin","z_sample","x_sample","x_denoise_row"]
         data = []
         rank_zero_info("upload wandb")
         for k in columns:
-            if k in ["ddim200_row"]:
+            if k in ["x_denoise_row"]:
                 grids = einops.rearrange(videos[k], "b c h w -> b h w c")
                 if self.rescale:
                     grids = np.array(((grids + 1.0) * 127.5)).astype(np.uint8)  # -1,1 -> 0,255; h,w,c -> uint8
                 grids = list([wandb.Image(i) for i in grids])
                 data.append(grids)
 
-            elif k in ["input","recon","z_origin","z_sample","ddim200", "condition"]:
+            elif k in ["x_origin","z_origin","z_sample","x_sample","recon", "condition"]:
                 grids = videos[k]
                 if self.rescale:
                     grids = np.array(((grids + 1.0) * 127.5)).astype(np.uint8) 
@@ -395,11 +395,10 @@ class VideoLogger(Callback):
                 line = "step-{:06}(epoch-{:06})/batch-{:06}/{}: {}\n".format( global_step, current_epoch, batch_idx, k, metrics[k])
                 f.write(line)
             f.write("\n")
-        
+
         root = os.path.join(save_dir, "videos", split)
         for k in videos:
-            # if k in ["diffusion_row", "ddim200_row", "ddpm1000_row"]:
-            if k in ["ddim200_row"]:
+            if k in ["x_denoise_row"]:
                 for i in range(videos[k].shape[0]):
                     grid = einops.rearrange(videos[k][i], "c h w -> h w c")
                     if self.rescale:
@@ -407,9 +406,8 @@ class VideoLogger(Callback):
                     filename = "step-{:06}(epoch-{:06})/batch-{:06}/{}/video-{:06}.png".format( global_step, current_epoch, batch_idx, k, i)
                     path = os.path.join(root, filename)
                     os.makedirs(os.path.split(path)[0], exist_ok=True)
-                    media.write_image(path, grid)
-            # elif k in ["input","recon","z_origin","z_sample","ddim200","ddim200_quantized", "ddpm1000"]:
-            elif k in ["input","recon","z_origin","z_sample","ddim200", "condition"]:
+                    media.write_image(path, grid.squeeze())
+            elif k in ["x_origin","z_origin","z_sample","x_sample","recon", "condition"]:
                 for i in range(videos[k].shape[0]):
                     video = einops.rearrange(videos[k][i], "t c h w -> t h w c")
                     if self.rescale:
@@ -417,7 +415,7 @@ class VideoLogger(Callback):
                     filename = "step-{:06}(epoch-{:06})/batch-{:06}/{}/video-{:06}.gif".format(global_step, current_epoch, batch_idx, k, i)
                     path = os.path.join(root, filename)
                     os.makedirs(os.path.split(path)[0], exist_ok=True)
-                    media.write_video(path, video, fps=20, codec='gif')
+                    media.write_video(path, video.squeeze(), fps=20, codec='gif')
         
         rank_zero_info("log local done")
 
@@ -908,6 +906,7 @@ if __name__ == "__main__":
 
 # [for test(sampling) like] wait for edit
 # CUDA_VISIBLE_DEVICES=0 python main.py --resume logs_training/20230317-082651_kth-ldm-vq-f4 --gpus 0,
+# CUDA_VISIBLE_DEVICES=0 python main.py --resume logs_training/20230405-042152_kth-ldm-vq-f4 --gpus 0,
 
 # 主函数main.py
 # 训练和推理进入到./ldm/models/diffusion/ddpm.py

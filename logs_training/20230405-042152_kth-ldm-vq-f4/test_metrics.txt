@@ -1,0 +1,26 @@
+step-022400(epoch-005599)/batch-000000/test/z0_min: -1.1791785955429077
+step-022400(epoch-005599)/batch-000000/test/z0_max: 1.1192193031311035
+step-022400(epoch-005599)/batch-000000/test/x0_min: -1.0
+step-022400(epoch-005599)/batch-000000/test/x0_max: 1.0
+step-022400(epoch-005599)/batch-000000/test/pixel_mse/pred30: 2206.75732421875
+step-022400(epoch-005599)/batch-000000/test/avg/ssim/pred30: 0.6544713904478331
+step-022400(epoch-005599)/batch-000000/test/std/ssim/pred30: 0.13266959382829535
+step-022400(epoch-005599)/batch-000000/test/avg/psnr/pred30: 23.563774047999768
+step-022400(epoch-005599)/batch-000000/test/std/psnr/pred30: 3.547825330746797
+step-022400(epoch-005599)/batch-000000/test/avg/lpips/pred30: 0.14532885590063718
+step-022400(epoch-005599)/batch-000000/test/std/lpips/pred30: 0.09492977130778699
+step-022400(epoch-005599)/batch-000000/test/fvd/cond10pred30: 719.6518368411724
+
+step-022400(epoch-005599)/batch-000000/test/z0_min: -1.1791785955429077
+step-022400(epoch-005599)/batch-000000/test/z0_max: 1.1192193031311035
+step-022400(epoch-005599)/batch-000000/test/x0_min: -1.0
+step-022400(epoch-005599)/batch-000000/test/x0_max: 1.0
+step-022400(epoch-005599)/batch-000000/test/pixel_mse/pred30: 2206.75732421875
+step-022400(epoch-005599)/batch-000000/test/avg/ssim/pred30: 0.6544713904478331
+step-022400(epoch-005599)/batch-000000/test/std/ssim/pred30: 0.13266959382829535
+step-022400(epoch-005599)/batch-000000/test/avg/psnr/pred30: 23.563774047999768
+step-022400(epoch-005599)/batch-000000/test/std/psnr/pred30: 3.547825330746797
+step-022400(epoch-005599)/batch-000000/test/avg/lpips/pred30: 0.14532735305498742
+step-022400(epoch-005599)/batch-000000/test/std/lpips/pred30: 0.09493074737185027
+step-022400(epoch-005599)/batch-000000/test/fvd/cond10pred30: 719.658349724811
+

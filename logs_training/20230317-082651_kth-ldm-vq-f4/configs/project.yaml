@@ -23,7 +23,7 @@ model:
         f_min:
         - 1.0
     first_stage_key: video
-    cond_stage_key: condition_frames
+    cond_stage_key: condition_frames_latent
     cond_stage_trainable: false
     conditioning_key: concat
     cond_stage_config:
@@ -36,7 +36,7 @@ model:
     channels: 3
     frame_num:
       cond: 10
-      pred: 5
+      k: 5
     monitor: val/loss_ema
     use_ema: true
     ema_rate: 0.999
@@ -106,5 +106,5 @@ data:
       target: data.mydataset.KTH
       params:
         data_dir: /home/ubuntu11/zzc/data/KTH/pred-vdm/processed/valid
-        frames_per_sample: 30
+        frames_per_sample: 50
         total_videos: 256

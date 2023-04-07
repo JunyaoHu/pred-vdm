@@ -8,8 +8,15 @@ lightning:
         save_video_num: 8
         increase_log_steps: false
         log_videos_kwargs:
-          ddim_steps: 100
-          ddim_every_steps: 10
+          # steps: 100
+          # log_every_t: 20
+          # sampler_type: dpmsolver
+          # steps: 1000
+          # log_every_t: 200
+          # sampler_type: ddpm
+          steps: 200
+          log_every_t: 50
+          sampler_type: ddim
   trainer:
     benchmark: true
     max_steps: 400000

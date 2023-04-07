@@ -624,10 +624,13 @@ class UNetModel(nn.Module):
             ),
         )
 
-        # TODO: time_shift_block
-        # self.time_shift_block = nn.Sequential(
-        #     TemporalShift(nn.Sequential(), n_segment=8, n_div=8, inplace=False)
-        # )
+        self.time_shift_block = nn.Sequential(
+                TemporalShift(nn.Sequential(), n_segment=8, n_div=8, inplace=True)
+        )
+
+        self.concat_block = nn.Sequential(
+            nn.Conv2d(ch*2, ch, 1)
+        )
 
         self._feature_size += ch
 
@@ -718,11 +721,11 @@ class UNetModel(nn.Module):
     def forward(self, x, timesteps=None, context=None, y=None,**kwargs):
         """
         Apply the model to an input batch.
-        :param x: an [N x C x ...] Tensor of inputs.
+        :param x: an [N x TC x ...] Tensor of inputs.
         :param timesteps: a 1-D batch of timesteps.
         :param context: conditioning plugged in via crossattn
         :param y: an [N] Tensor of labels, if class-conditional.
-        :return: an [N x C x ...] Tensor of outputs.
+        :return: an [N x TC x ...] Tensor of outputs.
         """
         assert (y is not None) == (
             self.num_classes is not None
@@ -736,23 +739,49 @@ class UNetModel(nn.Module):
             emb = emb + self.label_emb(y)
 
         h = x.type(self.dtype)
-
         for module in self.input_blocks:
             h = module(h, emb, context)
             hs.append(h)
 
-        h = self.middle_block(h, emb, context)
+        ############### without TSM ##############
+        # h = self.middle_block(h, emb, context)
+
+        ############### with  TSM ################
+        bs = h.shape[0]
+        t = self.in_channels
+        
+        h1 = self.middle_block(h, emb, context)
+        print(h.shape, h1.shape)
+        # b tc h w
+        h1 = h1.reshape(bs, t, -1, h.shape[-2], h.shape[-1])
+        # b t c h w
+
+        h2 = h.reshape(bs, t, -1, h.shape[-2], h.shape[-1])
+        # b t c h w
+        h2 = einops.rearrange(h2, "b t h w -> (b t) c h w")
+        h2 = self.time_shift_block(h2)
+        # bt c h w
+        h2 = h2.reshape(bs, t, -1, h2.shape[-2], h2.shape[-1])
+        # b t c h w
+
+        h = th.cat([h1, h2], dim=2)
+        # b t 2c h w
+
+        h = einops.rearrange(h, "b t c h w -> b (t c) h w")
+        # b 2tc h w
+
+        h = self.concat_block(h)
+        # b tc h w
 
         for module in self.output_blocks:
             h = th.cat([h, hs.pop()], dim=1)
             h = module(h, emb, context)
-
         h = h.type(x.dtype)
-        
         if self.predict_codebook_ids:
             return self.id_predictor(h)
         else:
             return self.out(h)
+
 
 class EncoderUNetModel(nn.Module):
     """

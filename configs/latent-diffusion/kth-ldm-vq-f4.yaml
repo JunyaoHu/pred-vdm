@@ -2,16 +2,16 @@ model:
   base_learning_rate: 1.5625e-6 # 2e-06 # 4e-07
   target: ldm.models.diffusion.ddpm.LatentDiffusion
   params:
-    # it should be ['x0' or 'eps']
+    # it should be ['eps']
     parameterization: eps
     beta_schedule: linear
-    linear_start: 0.0001 # 0.0015
-    linear_end: 0.02 # 0.0195
+    linear_start: 0.0015 # mcvd 0.0001 # 0.0015
+    linear_end: 0.0195 # mcvd 0.02 # 0.0195
     num_timesteps_cond: 1
     log_every_t: 200 # log_every_timestep
     timesteps: 1000
-    scale_factor: 0.2
-    clip_denoised: True
+    scale_factor: 0.2 # 1.0 0.2
+    clip_denoised: True # False True
     
     scheduler_config: 
       target: ldm.lr_scheduler.LambdaLinearScheduler
@@ -23,7 +23,7 @@ model:
 
     first_stage_key: video
 
-    cond_stage_key: condition_frames_optical_flow
+    cond_stage_key: condition_frames_latent_and_optical_flow
     # cond_stage_key: class_label
 
     # 1. if     caption, coordinates_bbox
@@ -36,6 +36,7 @@ model:
     #               -> super().get_input(batch, cond_key).to(self.device)
     
     cond_stage_trainable: true
+    # cond_stage_trainable: false
 
     # conditioning_key in [None, 'concat', 'crossattn', 'hybrid', 'adm']
     # conditioning_key: crossattn
@@ -53,57 +54,22 @@ model:
     cond_stage_config:
       target: ldm.modules.encoders.modules.OpticlaFlowEmbedder
       params:
-        frame_num_cond: 10
+        cond_frames: 10
+        inner_factor: 5
 
     # cond_stage_config:
-    #   target: ldm.modules.encoders.modules.ClassEmbedder
+    #   target: ldm.modules.encoders.modules.FramesEmbedder
     #   params:
-    #     # nn.Embedding(n_classes, embed_dim) n_classes have embed_dims
-    #     n_classes: 6
-    #     embed_dim: 512
-    #     key: class_label
-
-    # cond_stage_config:
-    #   target: ldm.modules.encoders.modules.BERTEmbedder
-    #   params:
-    #     n_embed: 512
-    #     n_layer: 16
-    #     vocab_size: 8192
-    #     max_seq_len: 92
-    #     use_tokenizer: false
-
-    # cond_stage_config:
-    #   target: torch.nn.Identity
-
-    # cond_stage_config:
-    #   target: ldm.modules.encoders.modules.SpatialRescaler
-    #   params:
-    #     n_stages: 2
-    #     in_channels: 182
-    #     out_channels: 3
-
-    # cond_stage_config:
-    #   target: taming.models.dummy_cond_stage.DummyCondStage
-    #   params:
-    #     conditional_key: objects_bbox
-
-    # cond_stage_config:
-    #   target: taming.modules.misc.coord.CoordStage
-    #   params:
-    #     n_embed: 1024
-    #     down_factor: 16
-
-    # cond_stage_config:
-    #   target: taming.models.dummy_cond_stage.DummyCondStage
-    #   params:
-    #     conditional_key: objects_bbox
+    #     cond_frames: 10
+    #     inner_factor: 5
 
     image_size: 16
     VQ_batch_size: 256
     channels: 3
+    origin_channels: 1
     frame_num:
       cond: 10
-      pred: 5
+      k: 5
     monitor: val/loss_ema
     use_ema: True
     ema_rate: 0.999
@@ -112,11 +78,10 @@ model:
       target: ldm.modules.diffusionmodules.openaimodel.UNetModel
       params:
         dims: 2
-
         image_size: 16
-        in_channels: 25
-        out_channels: 15
-        model_channels: 96
+        in_channels: 54 # pred(5*3)+cond(10*3)+optical(9*1)=54
+        out_channels: 15 # pred(5*3)
+        model_channels: 96 #ldm 224 # mcvd 96
         attention_resolutions:
         # note: this isn\t actually the resolution but the downsampling factor.
         - 2
@@ -128,7 +93,7 @@ model:
         - 2
         - 3
         - 4
-        num_head_channels: 96
+        num_head_channels: 96 # ldm 32 # mcvd 96
         # use_spatial_transformer: true
         # transformer_depth: 1
         # context_dim: 408
@@ -146,7 +111,7 @@ model:
         ddconfig:
           double_z: false
           z_channels: 3
-          resolution: 64
+          resolution: 32
           in_channels: 3
           out_ch: 3
           ch: 128
@@ -179,7 +144,7 @@ data:
       params:
         data_dir: /home/ubuntu11/zzc/data/KTH/pred-vdm/processed/valid
         frames_per_sample: 30
-        total_videos: 100
+        total_videos: 128
     test:
       target: data.mydataset.KTH
       params:
@@ -197,8 +162,15 @@ lightning:
         save_video_num: 8
         increase_log_steps: False
         log_videos_kwargs:
-          ddim_steps: 100
-          ddim_every_steps: 10
+          # steps: 100
+          # log_every_t: 20
+          # sampler_type: dpmsolver
+          # steps: 1000
+          # log_every_t: 200
+          # sampler_type: ddpm
+          steps: 200
+          log_every_t: 50
+          sampler_type: ddim
 
   trainer:
     benchmark: True

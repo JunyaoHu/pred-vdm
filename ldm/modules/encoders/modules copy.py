@@ -102,24 +102,22 @@ class BERTEmbedder(AbstractEncoder):
     def encode(self, text):
         # output of length 77
         return self(text)
-
+    
 class FramesEmbedder(AbstractEncoder):
-    def __init__(self, cond_frames, inner_factor, device="cuda"):
+    def __init__(self, input_channels, output_channels, device="cuda"):
         super().__init__()
-        self.cond_frames = cond_frames
-        self.inner_factor = inner_factor
+        self.input_channels = input_channels
+        self.output_channels = output_channels
         self.device = device
 
-        self.conv1 = nn.Conv2d(self.cond_frames*3, self.cond_frames*inner_factor, kernel_size=3, stride=2, padding=1)
-        self.conv2 = nn.Conv2d(self.cond_frames*inner_factor, self.cond_frames*3, kernel_size=3, stride=2, padding=1)
+        self.conv1 = nn.Conv2d(self.input_channels, self.input_channels*2, kernel_size=3, stride=2, padding=1)
+        self.conv2 = nn.Conv2d(self.input_channels*2, self.output_channels, kernel_size=3, stride=2, padding=1)
 
     def forward(self, video):
-        assert video.shape[2] == 3, "video channels should be 3"
         import einops
         video = einops.rearrange(video, "b t c h w -> b (t c) h w")
         video = self.conv1(video)
         video = self.conv2(video)
-        video = einops.rearrange(video, "b (t c) h w -> b t c h w", c = 3)
         return video
 
     def encode(self, video):
@@ -146,14 +144,13 @@ class MotionStateEmbedder(AbstractEncoder):
         return self(video)
 
 class OpticlaFlowEmbedder(AbstractEncoder):
-    def __init__(self, cond_frames=10, inner_factor=5, device="cuda"):
+    def __init__(self, frame_num_cond, device="cuda"):
         super().__init__()
-        self.cond_frames = cond_frames
-        self.inner_factor = inner_factor
+        self.frame_num_cond = frame_num_cond
         self.device = device
         self.downsample = nn.Sequential(
-            nn.Conv2d((self.cond_frames-1)*2, self.cond_frames*self.inner_factor, 3, stride=2, padding=1),
-            nn.Conv2d(self.cond_frames*self.inner_factor, self.cond_frames-1, 3, stride=2, padding=1),
+            nn.Conv2d((frame_num_cond-1)*2, self.frame_num_cond*2, 3, stride=2, padding=1),
+            nn.Conv2d(self.frame_num_cond*2, self.frame_num_cond, 3, stride=2, padding=1),
         ) 
 
     def forward(self, video):
@@ -168,8 +165,8 @@ class OpticlaFlowEmbedder(AbstractEncoder):
         # -> [bs, 9, 2, 64, 64] 
         # -> [bs, 18, 64, 64] 
         # -> [bs, 20, 32, 32]
-        # -> [bs, 9, 16, 16]
-        # -> [bs, 9, 1, 16, 16]
+        # -> [bs, 10, 16, 16]
+        # -> [bs, 10, 1, 16, 16]
         return tokens
 
     def encode(self, optical):
