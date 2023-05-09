@@ -1371,7 +1371,7 @@ class LatentDiffusion(DDPM):
         # print(z_pred.shape, z_cond_init.shape, x_pred.shape, x_rec.shape, x_cond_init.shape)
 
         # x_cond_init   [64, cond, 3, 64, 64]
-        # z_cond_init   [64, cond, 3, 16, 16], [64, cond-1, 1, 16, 16]
+        # z_cond_init   [64, cond, 3, 16, 16]
         # x_pred        [64, pred, 3, 64, 64] 
         # z_pred        [64, pred, 3, 16, 16] 
         # x_rec         [64, pred, 3, 64, 64] 
@@ -1380,10 +1380,9 @@ class LatentDiffusion(DDPM):
         pred_length = z_pred.shape[1]
 
         x_cond          = x_cond_init
-        z_cond          = z_cond_init[0]
-        z_cond_optical  = z_cond_init[1]
+        z_cond          = z_cond_init
 
-        z_sample = z_cond_init[0]
+        z_sample = z_cond_init
         x_sample = x_cond_init
 
         z_intermediates = []
@@ -1420,18 +1419,10 @@ class LatentDiffusion(DDPM):
             x_cond = torch.cat([x_cond, x_sample], dim=1)[:,-self.frame_num.cond:]
             # print("x_cond", x_cond.shape) # [64, 10, 3, 64, 64]
 
-            if self.cond_stage_key == "condition_frames_latent_and_optical_flow":
-                # option 1: predicted z -> predicted x -> cond z
-                # tmp_z_cond= self.video_batch_encode(x_cond)
-                # option 2 [better performance]: predicted z -> cond z
+            if self.cond_stage_key == "condition_frames_latent":
                 tmp_z_cond          = tmp_z_sample
-                tmp_z_cond_optical  = self.get_learned_conditioning(x_cond)
                 z_cond              = torch.cat([z_cond,         tmp_z_cond],         dim=1)[:,-self.frame_num.cond:]
-                z_cond_optical      = torch.cat([z_cond_optical, tmp_z_cond_optical], dim=1)[:,-(self.frame_num.cond-1):]
-                c1 = z_cond
-                c2 = z_cond_optical
-                print(z_cond.shape, z_cond_optical.shape)
-                now_cond = [c1, c2]
+                now_cond = z_cond
             else:
                 NotImplementedError()
             

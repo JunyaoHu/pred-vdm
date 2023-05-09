@@ -113,5 +113,5 @@ def convert_MCVD_setting():
 
 convert_MCVD_setting()
 
-# cd /home/ubuntu15/zzc/code/videoprediction/pred-vdm/data/KTH/
+# cd /root/code/pred-vdm/data/KTH
 # python 02_kth_train_val_test_split.py

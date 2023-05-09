@@ -21,7 +21,7 @@ from pytorch_lightning.callbacks import ModelCheckpoint, Callback, LearningRateM
 from pytorch_lightning.utilities.rank_zero import rank_zero_only
 from pytorch_lightning.utilities import rank_zero_info
 
-from ldm.data.base import Txt2ImgIterableBaseDataset
+# from ldm.data.base import Txt2ImgIterableBaseDataset
 from ldm.util import instantiate_from_config
 
 import os
@@ -110,7 +110,7 @@ def get_parser(**parser_kwargs):
         "-f",
         "--postfix",
         type=str,
-        default="",
+        required=True,
         help="post-postfix for default name",
     )
     parser.add_argument(
@@ -204,7 +204,8 @@ class DataModuleFromConfig(pl.LightningDataModule):
                 self.datasets[k] = WrappedDataset(self.datasets[k])
 
     def _train_dataloader(self):
-        is_iterable_dataset = isinstance(self.datasets['train'], Txt2ImgIterableBaseDataset)
+        # is_iterable_dataset = isinstance(self.datasets['train'], Txt2ImgIterableBaseDataset)
+        is_iterable_dataset = False
         if is_iterable_dataset or self.use_worker_init_fn:
             init_fn = worker_init_fn
         else:
@@ -222,7 +223,8 @@ class DataModuleFromConfig(pl.LightningDataModule):
                           )
 
     def _val_dataloader(self, shuffle=False):
-        is_iterable_dataset = isinstance(self.datasets['validation'], Txt2ImgIterableBaseDataset)
+        # is_iterable_dataset = isinstance(self.datasets['validation'], Txt2ImgIterableBaseDataset)
+        is_iterable_dataset = False
         if is_iterable_dataset or self.use_worker_init_fn:
             init_fn = worker_init_fn
         else:
@@ -240,7 +242,8 @@ class DataModuleFromConfig(pl.LightningDataModule):
                           )
 
     def _test_dataloader(self, shuffle=False):
-        is_iterable_dataset = isinstance(self.datasets['train'], Txt2ImgIterableBaseDataset)
+        # is_iterable_dataset = isinstance(self.datasets['train'], Txt2ImgIterableBaseDataset)
+        is_iterable_dataset = False
         if is_iterable_dataset or self.use_worker_init_fn:
             init_fn = worker_init_fn
         else:
@@ -272,10 +275,9 @@ class DataModuleFromConfig(pl.LightningDataModule):
 
 
 class SetupCallback(Callback):
-    def __init__(self, resume, now, logdir, ckptdir, cfgdir, config, lightning_config):
+    def __init__(self, resume, logdir, ckptdir, cfgdir, config, lightning_config):
         super().__init__()
         self.resume = resume
-        self.now = now
         self.logdir = logdir
         self.ckptdir = ckptdir
         self.cfgdir = cfgdir
@@ -310,14 +312,15 @@ class SetupCallback(Callback):
 
         else:
             # ModelCheckpoint callback created log directory --- remove it
-            if not self.resume and os.path.exists(self.logdir):
-                dst, name = os.path.split(self.logdir)
-                dst = os.path.join(dst, "child_runs", name)
-                os.makedirs(os.path.split(dst)[0], exist_ok=True)
-                try:
-                    os.rename(self.logdir, dst)
-                except FileNotFoundError:
-                    pass
+            # if not self.resume and os.path.exists(self.logdir):
+            #     dst, name = os.path.split(self.logdir)
+            #     dst = os.path.join(dst, "child_runs", name)
+            #     os.makedirs(os.path.split(dst)[0], exist_ok=True)
+            #     try:
+            #         os.rename(self.logdir, dst)
+            #     except FileNotFoundError:
+            #         pass
+            pass
 
 
 class VideoLogger(Callback):
@@ -569,7 +572,7 @@ if __name__ == "__main__":
     #           params:
     #               key: value
 
-    now = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    # now = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
 
     # add cwd for convenience and to make classes in this file available when
     # running as `python main.py`
@@ -619,24 +622,23 @@ if __name__ == "__main__":
     # else means it is not resume
     else:
         if opt.name:
-            name = "_" + opt.name
+            name = opt.name
         elif opt.base:
             # [configs/latent-diffusion/kth-ldm-vq-f4.yaml] ->
             # cfg_fname: kth-ldm-vq-f4.yaml
             # cfg_name:  kth-ldm-vq-f4
-            # name:      _kth-ldm-vq-f4
+            # name:      kth-ldm-vq-f4_
             cfg_fname = os.path.split(opt.base[0])[-1]
             cfg_name = os.path.splitext(cfg_fname)[0]
-            name = "_" + cfg_name
+            name = cfg_name
         else:
             name = ""
+
         if opt.postfix != "":
-            nowname = now + name + "_" + opt.postfix
-        else:
-            nowname = now + name
-        # nowname: eg. 20230209-160159_kth-ldm-vq-f4
-        nowname = now + name + opt.postfix
-        # logdir: eg. ./logs/20230209-160159_kth-ldm-vq-f4
+            nowname = name + "_" + opt.postfix
+
+        # nowname: eg. kth-ldm-vq-f4_xxxxx
+        # logdir: eg. ./logs/kth-ldm-vq-f4_xxxx
         logdir = os.path.join(opt.logdir, nowname)
 
     ckptdir = os.path.join(logdir, "checkpoints")
@@ -744,7 +746,6 @@ if __name__ == "__main__":
                 "target": "main.SetupCallback",
                 "params": {
                     "resume": opt.resume,
-                    "now": now,
                     "logdir": logdir,
                     "ckptdir": ckptdir,
                     "cfgdir": cfgdir,
@@ -897,15 +898,16 @@ if __name__ == "__main__":
 # CUDA_VISIBLE_DEVICES=0,1 python main.py --base configs/latent-diffusion/kth-ldm-vq-f4.yaml --train --gpus 0,1
 
 # [for training like]
-# CUDA_VISIBLE_DEVICES=0,1 python main.py --base configs/latent-diffusion/kth-ldm-vq-f4.yaml --train --gpus 0,1
-# CUDA_VISIBLE_DEVICES=0 python main.py --base configs/latent-diffusion/kth-ldm-vq-f4.yaml --train --gpus 0,
+# CUDA_VISIBLE_DEVICES=0,1 python main.py --base configs/smmnist64.yaml -l /root/autodl-tmp/logs_training --train --gpus 0,1 -f 230509_test01
+# CUDA_VISIBLE_DEVICES=0,1 python main.py --base configs/kth64.yaml -l /root/autodl-tmp/logs_training --train --gpus 0,1 -f 230509_test01
+# CUDA_VISIBLE_DEVICES=0 python main.py --base configs/kth-ldm-vq-f4.yaml --train --gpus 0,
 # python main.py --base configs/latent-diffusion/kth-ldm-vq-f4.yaml --train
 
 # [for resume from a checkpoint like]
 # CUDA_VISIBLE_DEVICES=0,1 python main.py --resume logs_training/20230220-213917_kth-ldm-vq-f4 --train --gpus 0,1
 
 # [for test(sampling) like] wait for edit
-# CUDA_VISIBLE_DEVICES=0 python main.py --resume logs_training/20230317-082651_kth-ldm-vq-f4 --gpus 0,
+# CUDA_VISIBLE_DEVICES=0 python main.py --resume logs_training/20230317-082651_kth-ldm-vq-f4 --gpus 0, 
 # CUDA_VISIBLE_DEVICES=0 python main.py --resume logs_training/20230405-042152_kth-ldm-vq-f4 --gpus 0,
 
 # 主函数main.py

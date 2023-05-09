@@ -1,0 +1,189 @@
+model:
+  base_learning_rate: 1.5625e-6 # 2e-06 # 4e-07
+  target: ldm.models.diffusion.ddpm.LatentDiffusion
+  params:
+    # it should be ['eps']
+    parameterization: eps
+    beta_schedule: linear
+    linear_start: 0.0015 # mcvd 0.0001 # 0.0015
+    linear_end: 0.0195 # mcvd 0.02 # 0.0195
+    num_timesteps_cond: 1
+    log_every_t: 200 # log_every_timestep
+    timesteps: 1000
+    scale_factor: 0.2 # 1.0 0.2
+    clip_denoised: True # False True
+    
+    scheduler_config: 
+      target: ldm.lr_scheduler.LambdaLinearScheduler
+      params:
+        warm_up_steps: [5000]
+        f_start: [1.e-6]
+        f_max: [1.]
+        f_min: [1.]
+
+    first_stage_key: video
+
+    cond_stage_key: condition_frames_latent
+    # cond_stage_key: class_label
+
+    # 1. if     caption, coordinates_bbox
+    #               -> batch
+    # 2. elif   class_label
+    #               -> batch[cond_key]
+    # 4. elif   "condition_frames_optical_flow","condition_frames_motion_state", "condition_frames", "condition_frames_latent"
+    #               -> batch[cond_key][:,:self.frame_num.cond]
+    # 3. else   image, nix, LR_image, masked_image, segmentation，objects_bbox，depth，bbox_img
+    #               -> super().get_input(batch, cond_key).to(self.device)
+    
+    # cond_stage_trainable: true
+    cond_stage_trainable: false
+
+    # conditioning_key in [None, 'concat', 'crossattn', 'hybrid', 'adm']
+    # conditioning_key: crossattn
+    conditioning_key: concat
+
+    # cond_stage_config: __is_unconditional__
+    cond_stage_config: __is_first_stage__
+    
+    # cond_stage_config:
+    #   target: ldm.modules.encoders.modules.MotionStateEmbedder
+    #   params:
+    #     t_length: 20
+    #     embed_dim: 408
+
+    # cond_stage_config:
+    #   target: ldm.modules.encoders.modules.OpticlaFlowEmbedder
+    #   params:
+    #     cond_frames: 10
+    #     inner_factor: 5
+
+    # cond_stage_config:
+    #   target: ldm.modules.encoders.modules.FramesEmbedder
+    #   params:
+    #     cond_frames: 10
+    #     inner_factor: 5
+
+    image_size: 16
+    VQ_batch_size: 256
+    channels: 3
+    origin_channels: 1
+    frame_num:
+      cond: 10
+      k: 5
+    monitor: val/loss_ema
+    use_ema: True
+    ema_rate: 0.999
+
+    unet_config:
+      target: ldm.modules.diffusionmodules.openaimodel.UNetModel
+      params:
+        dims: 2
+        image_size: 16
+        in_channels: 45
+        out_channels: 15
+        model_channels: 224 #ldm 224 # mcvd 96
+        attention_resolutions:
+        # note: this isn\t actually the resolution but the downsampling factor.
+        - 2
+        - 4
+        - 8
+        num_res_blocks: 2
+        channel_mult:
+        - 1
+        - 2
+        - 3
+        - 4
+        num_head_channels: 32 # ldm 32 # mcvd 96
+        # use_spatial_transformer: true
+        # transformer_depth: 1
+        # context_dim: 408
+        dropout: 0.1
+        # ps: [context_dim] should be equal to the [embed_dim] of cond_stage_config
+        # use_scale_shift_norm: True
+        # resblock_updown: True
+    
+    first_stage_config:
+      target: ldm.models.autoencoder.VQModelInterface
+      params:
+        embed_dim: 3
+        n_embed: 8192
+        ckpt_path: models/first_stage_models/vq-f4/model.ckpt
+        ddconfig:
+          double_z: false
+          z_channels: 3
+          resolution: 32
+          in_channels: 3
+          out_ch: 3
+          ch: 128
+          ch_mult:
+          - 1
+          - 2
+          - 4
+          num_res_blocks: 2
+          attn_resolutions: []
+          dropout: 0.0
+        lossconfig:
+          target: torch.nn.Identity
+
+data:
+  target: main.DataModuleFromConfig
+  params:
+    batch_size: 
+      train: 64
+      validation: 100
+      test: 256
+    num_workers: 8
+    wrap: false
+    train:
+      target: data.mydataset.VideoDataset
+      params:
+        data_dir: /root/autodl-tmp/KTH/KTH_h5/train
+        frames_per_sample: 15
+    validation:
+      target: data.mydataset.VideoDataset
+      params:
+        data_dir: /root/autodl-tmp/KTH/KTH_h5/valid
+        frames_per_sample: 30
+        total_videos: 100
+    test:
+      target: data.mydataset.VideoDataset
+      params:
+        data_dir: /root/autodl-tmp/KTH/KTH_h5/valid
+        frames_per_sample: 40
+        total_videos: 256
+
+lightning:
+  callbacks:
+    video_logger:
+      target: main.VideoLogger
+      params:
+        batch_frequency: 1
+        calculate_video_num: 256
+        save_video_num: 8
+        increase_log_steps: False
+        log_videos_kwargs:
+          # steps: 100
+          # log_every_t: 20
+          # sampler_type: dpmsolver
+          # steps: 1000
+          # log_every_t: 200
+          # sampler_type: ddpm
+          steps: 200
+          log_every_t: 50
+          sampler_type: ddim
+
+  trainer:
+    benchmark: True
+    # 梯度累积
+    # accumulate_grad_batches: 2
+    # Stop training after training step up to [max_steps]. Disabled by default (-1), it will go on forever until interrupted
+    max_steps: 400000
+    # log_steps for train_loss (because its log_dict\log is on_step=True), default (50),
+    log_every_n_steps: 100
+    # 提前校验，避免校验时出错导致浪费时间
+    # Sanity check runs n validation batches before starting the training routine. Set it to -1 to run all batches in all validation dataloaders. Default: 2.
+    num_sanity_val_steps: 0
+    # 每n个epoch校验一次，即自动调用 validation_step() 函数, 默认为1
+    check_val_every_n_epoch: 200
+    # 梯度裁剪
+    gradient_clip_val: 1.0

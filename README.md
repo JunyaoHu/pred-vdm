@@ -22,8 +22,9 @@ conda install pytorch==1.12.1 torchvision==0.13.1 torchaudio==0.12.1 cudatoolkit
 
 conda install pytorch-lightning -c conda-forge
 conda install h5py
+conda install ffmpeg
 
-pip install opencv-python omegaconf mediapy einops wandb lpips progressbar scikit-image albumentations
+pip install opencv-python==4.7.0.72 omegaconf mediapy einops wandb lpips progressbar scikit-image albumentations==1.3.0
 
 # mcvd need
 pip install ninja prettytable 

@@ -105,6 +105,7 @@ if __name__ == "__main__":
 
     make_h5_from_kth(out_dir=args.out_dir, kth_dir=args.kth_dir, split_dir=args.split_dir, image_size=args.image_size, vids_per_shard=args.vids_per_shard, force_h5=args.force_h5)
 
-# cd /home/ubuntu11/zzc/code/videoprediction/pred-vdm/data/KTH
-# dataset_root=/home/ubuntu11/zzc/data/KTH
-# python 03_kth_convert.py --split_dir ./ --image_size 64 --kth_dir $dataset_root/raw --out_dir $dataset_root/pred-vdm/processed --force_h5 False
+# Example:
+# cd /root/code/pred-vdm/data/KTH
+# dataset_root=/root/autodl-tmp/KTH
+# python 03_kth_convert.py --split_dir ./ --image_size 64 --kth_dir $dataset_root/raw --out_dir $dataset_root/KTH_h5 --force_h5 False

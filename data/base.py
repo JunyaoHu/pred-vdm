@@ -66,7 +66,7 @@ class VideoPaths(Dataset):
     
 
 class HDF5InterfaceDataset(Dataset):
-    def __init__(self, data_dir, frames_per_sample, random_time=True, total_videos=-1, start_at=0, labels=None):
+    def __init__(self, data_dir, frames_per_sample, random_time=True, flip=False, total_videos=-1, start_at=0, labels=None):
         super().__init__()
         if labels is None:
             self.labels = dict() 
@@ -82,7 +82,11 @@ class HDF5InterfaceDataset(Dataset):
         # The numpy HWC image is converted to pytorch CHW tensor. 
         # If the image is in HW format (grayscale image), 、
         # it will be converted to pytorch HW tensor.
-        flag = random.choice([0,1])
+
+        if flip:
+            flag = random.choice([0,1])
+        else:
+            flag = 0
 
         self.trans = A.Compose([
             A.HorizontalFlip(p=flag),
