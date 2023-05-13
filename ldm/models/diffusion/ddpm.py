@@ -24,7 +24,8 @@ from pytorch_lightning.utilities import rank_zero_info
 from ldm.util import log_txt_as_img, exists, default, ismap, isimage, mean_flat, count_params, instantiate_from_config
 from ldm.modules.ema import LitEma
 from ldm.modules.distributions.distributions import normal_kl, DiagonalGaussianDistribution
-from ldm.models.autoencoder import VQModelInterface, IdentityFirstStage, AutoencoderKL
+from ldm.models.autoencoder import VQModelInterface
+# from ldm.models.autoencoder import VQModelInterface, IdentityFirstStage, AutoencoderKL
 from ldm.modules.diffusionmodules.util import make_beta_schedule, extract_into_tensor, noise_like
 from ldm.models.diffusion.ddim import DDIMSampler
 from ldm.models.diffusion.dpm_solver import DPMSolverSampler
@@ -361,8 +362,6 @@ class LatentDiffusion(DDPM):
                  num_timesteps_cond=None,
                  cond_stage_key="video",
                  cond_stage_trainable=False,
-                 concat_mode=True,
-                 cond_stage_forward=None,
                  conditioning_key=None,
                  scale_factor=1.,
                  scale_by_std=False,
@@ -377,24 +376,16 @@ class LatentDiffusion(DDPM):
         assert self.num_timesteps_cond <= kwargs['timesteps']
         # for backwards compatibility after implementation of DiffusionWrapper
         # 实现DiffusionWrapper后的向后兼容性
-        # cond_stage_config -> conditioning_key -> concat_mode
 
         if cond_stage_config == '__is_unconditional__':
-            conditioning_key = None
+            assert conditioning_key is None, "this is unconditional model (by cond_stage_config = '__is_unconditional__'), you can set conditioning_key: null"
         else:
-            if conditioning_key is not None:
-                pass
-            else:
-                if concat_mode:
-                    conditioning_key = 'concat'
-                else:
-                    conditioning_key = 'crossattn'
-                
+            assert conditioning_key is not None, "this is conditional model (by cond_stage_config != '__is_unconditional__'), you can set conditioning_key"
         
         ckpt_path = kwargs.pop("ckpt_path", None)
         ignore_keys = kwargs.pop("ignore_keys", [])
         super().__init__(conditioning_key=conditioning_key, *args, **kwargs)
-        # self.concat_mode = concat_mode
+
         self.cond_stage_trainable = cond_stage_trainable
         self.cond_stage_key = cond_stage_key
         try:
@@ -405,9 +396,10 @@ class LatentDiffusion(DDPM):
             self.scale_factor = scale_factor
         else:
             self.register_buffer('scale_factor', torch.tensor(scale_factor))
+
         self.instantiate_first_stage(first_stage_config)
         self.instantiate_cond_stage(cond_stage_config)
-        self.cond_stage_forward = cond_stage_forward
+
         self.clip_denoised = False
         self.bbox_tokenizer = None  
 
@@ -420,10 +412,6 @@ class LatentDiffusion(DDPM):
         self.cond_ids = torch.full(size=(self.num_timesteps,), fill_value=self.num_timesteps - 1, dtype=torch.long)
         ids = torch.round(torch.linspace(0, self.num_timesteps - 1, self.num_timesteps_cond)).long()
         self.cond_ids[:self.num_timesteps_cond] = ids
-
-        # torch.linspace(0,999,1)                                                                                       
-        # tensor([0.])
-        # self.cond_ids = [0, 999, 999, 999, ..., 999]
                       
     @rank_zero_only
     @torch.no_grad()
@@ -452,9 +440,8 @@ class LatentDiffusion(DDPM):
             self.make_cond_schedule()
 
     def instantiate_first_stage(self, config):
-        # self.first_stage_model = model.eval() [make VAE has only have eval mode]
         model = instantiate_from_config(config)
-        self.first_stage_model = model.eval()
+        self.first_stage_model = model.eval() # make VAE has only have eval mode
         self.first_stage_model.train = disabled_train
         for param in self.first_stage_model.parameters():
             param.requires_grad = False
@@ -515,18 +502,12 @@ class LatentDiffusion(DDPM):
         return self.scale_factor * z
 
     def get_learned_conditioning(self, c):
-        if self.cond_stage_forward is None:
-            # this way, cond条件模型应该设置一个encode接口
-            # ps: c可能是一个字典或者列表，这个时候应该创建encode接口
-            if hasattr(self.cond_stage_model, 'encode') and callable(self.cond_stage_model.encode):
-                c = self.cond_stage_model.encode(c)
-                if isinstance(c, DiagonalGaussianDistribution):
-                    c = c.mode()
-            else:
-                c = self.cond_stage_model(c)
+        if hasattr(self.cond_stage_model, 'encode') and callable(self.cond_stage_model.encode):
+            c = self.cond_stage_model.encode(c)
+            if isinstance(c, DiagonalGaussianDistribution):
+                c = c.mode()
         else:
-            assert hasattr(self.cond_stage_model, self.cond_stage_forward)
-            c = getattr(self.cond_stage_model, self.cond_stage_forward)(c)
+            c = self.cond_stage_model(c)
         return c
 
     def meshgrid(self, h, w):
@@ -689,6 +670,7 @@ class LatentDiffusion(DDPM):
 
         # rank_zero_info(f"get input encode")
         # start = time.time()
+        # print("x.shape", x.shape)
         z = self.video_batch_encode(x)
         # rank_zero_info(f"get input encode done         {time.time() - start}")  # about 0.18 seconds
 
@@ -1862,14 +1844,14 @@ class LatentDiffusion(DDPM):
             return [opt], scheduler
         return opt
 
-    @torch.no_grad()
-    def to_rgb(self, x):
-        x = x.float()
-        if not hasattr(self, "colorize"):
-            self.colorize = torch.randn(3, x.shape[1], 1, 1).to(x)
-        x = nn.functional.conv2d(x, weight=self.colorize)
-        x = 2. * (x - x.min()) / (x.max() - x.min()) - 1.
-        return x
+    # @torch.no_grad()
+    # def to_rgb(self, x):
+    #     x = x.float()
+    #     if not hasattr(self, "colorize"):
+    #         self.colorize = torch.randn(3, x.shape[1], 1, 1).to(x)
+    #     x = nn.functional.conv2d(x, weight=self.colorize)
+    #     x = 2. * (x - x.min()) / (x.max() - x.min()) - 1.
+    #     return x
 
 # DiffusionWrapper(unet_config, conditioning_key(crossattn))
 class DiffusionWrapper(pl.LightningModule):
@@ -1881,28 +1863,19 @@ class DiffusionWrapper(pl.LightningModule):
 
     def forward(self, x, t, c_concat: list = None, c_crossattn: list = None):
         # x:
-        #   [b, t, c, h, w] -> [b ,t*c, h, w]
+        #   [b, t, c, h, w]
         # c_concat:
-        #   list -> [b, c', h, w] -> [b, c', h, w]
+        #   [b, t, c, h, w]
         # c_crossattn
         #   [b, length, dim_length]
 
         assert x.shape[2] == 3, "video channels should be 3"
 
-        import einops
-        x = einops.rearrange(x, "b t c h w -> b (t c) h w")
-
         if self.conditioning_key is None:
             out = self.diffusion_model(x, t)
 
         elif self.conditioning_key == 'concat':
-
-            # FIXME: Dont use c_concat[i] = rearrange c_concat[i] ......
-            # list index is dangerous here, you can easily forget list is not deep copy here!!!!!
-            cc = []
-            for i in range(len(c_concat)):
-                cc.append(einops.rearrange(c_concat[i], "b t c h w -> b (t c) h w"))
-            x_with_c = torch.cat([x] + cc, dim=1)
+            x_with_c = torch.cat([x] + c_concat, dim=1)
             out = self.diffusion_model(x_with_c, t)
 
         elif self.conditioning_key == 'crossattn':
@@ -1920,8 +1893,6 @@ class DiffusionWrapper(pl.LightningModule):
 
         else:
             raise NotImplementedError()
-        
-        out = einops.rearrange(out, "b (t c) h w -> b t c h w", c = 3)
 
         return out
 

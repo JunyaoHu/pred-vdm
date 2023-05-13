@@ -1,5 +1,5 @@
 model:
-  base_learning_rate: 1.5625e-6 # 2e-06 # 4e-07
+  base_learning_rate: 2e-06 # 1.5625e-6 # 2e-06 # 4e-07
   target: ldm.models.diffusion.ddpm.LatentDiffusion
   params:
     # it should be ['eps']
@@ -10,13 +10,13 @@ model:
     num_timesteps_cond: 1
     log_every_t: 200 # log_every_timestep
     timesteps: 1000
-    scale_factor: 0.2 # 1.0 0.2
-    clip_denoised: True # False True
+    scale_factor: 1.0 # 1.0 0.2
+    clip_denoised: False # False True
     
     scheduler_config: 
       target: ldm.lr_scheduler.LambdaLinearScheduler
       params:
-        warm_up_steps: [5000]
+        warm_up_steps: [10000]
         f_start: [1.e-6]
         f_max: [1.]
         f_min: [1.]
@@ -44,6 +44,7 @@ model:
 
     # cond_stage_config: __is_unconditional__
     cond_stage_config: __is_first_stage__
+
     
     # cond_stage_config:
     #   target: ldm.modules.encoders.modules.MotionStateEmbedder

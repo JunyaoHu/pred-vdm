@@ -7,24 +7,32 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-
 class TemporalShift(nn.Module):
-    def __init__(self, net, n_segment=3, n_div=8, inplace=False):
+    def __init__(self, net, t, time_shift_conf=0.5, n_segment=3, n_div=8, inplace=False):
         super(TemporalShift, self).__init__()
         self.net = net
+        self.t = t
         self.n_segment = n_segment
         self.fold_div = n_div
         self.inplace = inplace
+        self.time_shift_conf = time_shift_conf
+        
         if inplace:
             print('=> Using in-place shift...')
         print('=> Using fold div: {}'.format(self.fold_div))
 
     def forward(self, x):
+        bs, _, h, w = x.shape
+        x = x.reshape(bs, self.t, -1, h, w)
+        bs, _, c, h, w = x.shape
+        x = x.reshape(-1, c, h, w)
         x = self.shift(x, self.n_segment, fold_div=self.fold_div, inplace=self.inplace)
+        x = x.reshape(bs, -1, h, w)
         return self.net(x)
 
     @staticmethod
     def shift(x, n_segment, fold_div=3, inplace=False):
+        
         nt, c, h, w = x.size()
         n_batch = nt // n_segment
         x = x.view(n_batch, n_segment, c, h, w)
@@ -33,8 +41,8 @@ class TemporalShift(nn.Module):
         if inplace:
             # Due to some out of order error when performing parallel computing. 
             # May need to write a CUDA kernel.
-            raise NotImplementedError  
-            # out = InplaceShift.apply(x, fold)
+            # raise NotImplementedError  
+            out = InplaceShift.apply(x, fold)
         else:
             out = torch.zeros_like(x)
             out[:, :-1, :fold] = x[:, 1:, :fold]  # shift left
@@ -151,50 +159,57 @@ def make_temporal_pool(net, n_segment):
 if __name__ == '__main__':
     # test inplace shift v.s. vanilla shift
     tsm1 = TemporalShift(nn.Sequential(), n_segment=8, n_div=8, inplace=False)
-    # tsm2 = TemporalShift(nn.Sequential(), n_segment=8, n_div=8, inplace=True)
+    tsm2 = TemporalShift(nn.Sequential(), n_segment=8, n_div=8, inplace=True)
 
     # print('=> Testing CPU...')
     # # test forward
     # with torch.no_grad():
     #     for i in range(10):
-    #         x = torch.rand(2 * 8, 3, 224, 224)
+    #         x = torch.rand(2, 8, 3, 224, 224)
     #         y1 = tsm1(x)
-    #         # y2 = tsm2(x)
-    #         # assert torch.norm(y1 - y2).item() < 1e-5
+    #         y2 = tsm2(x)
+    #         print(x.shape, y1.shape, y2.shape)
+    #         assert torch.norm(y1 - y2).item() < 1e-5
 
     # # test backward
     # with torch.enable_grad():
     #     for i in range(10):
-    #         x1 = torch.rand(2 * 8, 3, 224, 224)
+    #         x1 = torch.rand(2, 8, 3, 224, 224)
     #         x1.requires_grad_()
     #         x2 = x1.clone()
     #         y1 = tsm1(x1)
-    #         # y2 = tsm2(x2)
+    #         y2 = tsm2(x2)
+    #         print(x.shape, y1.shape, y2.shape)
     #         grad1 = torch.autograd.grad((y1 ** 2).mean(), [x1])[0]
-    #         # grad2 = torch.autograd.grad((y2 ** 2).mean(), [x2])[0]
-    #         # assert torch.norm(grad1 - grad2).item() < 1e-5
+    #         grad2 = torch.autograd.grad((y2 ** 2).mean(), [x2])[0]
+    #         assert torch.norm(grad1 - grad2).item() < 1e-5
 
     print('=> Testing GPU...')
     tsm1.cuda()
-    # tsm2.cuda()
+    tsm2.cuda()
     # test forward
     with torch.no_grad():
         for i in range(10):
-            x = torch.rand(2 * 8, 3, 224, 224).cuda()
+            x = torch.rand(2, 8, 3, 224, 224).cuda()
             y1 = tsm1(x)
-            print(y1.shape)
-            # y2 = tsm2(x)
+            y2 = tsm2(x)
+            print(x.shape, y1.shape, y2.shape)
+            print(torch.norm(y1 - y2).item())
             # assert torch.norm(y1 - y2).item() < 1e-5
 
     # test backward
     with torch.enable_grad():
         for i in range(10):
-            x1 = torch.rand(2 * 8, 3, 224, 224).cuda()
+            x1 = torch.rand(128, 15, 3, 16, 16).cuda()
             x1.requires_grad_()
             x2 = x1.clone()
             y1 = tsm1(x1)
-            # y2 = tsm2(x2)
+            y2 = tsm2(x2)
+            print(x.shape, y1.shape, y2.shape)
             grad1 = torch.autograd.grad((y1 ** 2).mean(), [x1])[0]
-            # grad2 = torch.autograd.grad((y2 ** 2).mean(), [x2])[0]
-            # assert torch.norm(grad1 - grad2).item() < 1e-5
+            grad2 = torch.autograd.grad((y2 ** 2).mean(), [x2])[0]
+            assert torch.norm(grad1 - grad2).item() < 1e-5
     print('Test passed.')
+
+
+

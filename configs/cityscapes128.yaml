@@ -1,5 +1,5 @@
 model:
-  base_learning_rate: 2e-06 # 1.5625e-6 # 2e-06 # 4e-07
+  base_learning_rate: 1e-06 # 1.5625e-6 # 2e-06 # 4e-07
   target: ldm.models.diffusion.ddpm.LatentDiffusion
   params:
     # it should be ['eps']
@@ -44,6 +44,7 @@ model:
 
     # cond_stage_config: __is_unconditional__
     cond_stage_config: __is_first_stage__
+
     
     # cond_stage_config:
     #   target: ldm.modules.encoders.modules.MotionStateEmbedder
@@ -63,12 +64,12 @@ model:
     #     cond_frames: 10
     #     inner_factor: 5
 
-    image_size: 16
-    VQ_batch_size: 128
+    image_size: 32
+    VQ_batch_size: 64
     channels: 3
-    origin_channels: 1
+    origin_channels: 3
     frame_num:
-      cond: 10
+      cond: 2
       k: 5
     monitor: val/loss_ema
     use_ema: True
@@ -78,8 +79,8 @@ model:
       target: ldm.modules.diffusionmodules.openaimodel.UNetModel
       params:
         dims: 2
-        image_size: 16
-        in_channels: 45
+        image_size: 32
+        in_channels: 21
         out_channels: 15
         model_channels: 224 #ldm 224 # mcvd 96
         attention_resolutions:
@@ -137,19 +138,19 @@ data:
     train:
       target: data.mydataset.VideoDataset
       params:
-        data_dir: /root/autodl-tmp/SMMNIST/SMMNIST_h5/train
-        frames_per_sample: 15
+        data_dir: /root/autodl-tmp/Cityscapes/Cityscapes_h5/train
+        frames_per_sample: 7
     validation:
       target: data.mydataset.VideoDataset
       params:
-        data_dir: /root/autodl-tmp/SMMNIST/SMMNIST_h5/test
-        frames_per_sample: 20
+        data_dir: /root/autodl-tmp/Cityscapes/Cityscapes_h5/val
+        frames_per_sample: 16
         total_videos: 100
     test:
       target: data.mydataset.VideoDataset
       params:
-        data_dir: /root/autodl-tmp/SMMNIST/SMMNIST_h5/test
-        frames_per_sample: 20
+        data_dir: /root/autodl-tmp/Cityscapes/Cityscapes_h5/test
+        frames_per_sample: 30
         total_videos: 256
 
 lightning:
@@ -184,7 +185,6 @@ lightning:
     # Sanity check runs n validation batches before starting the training routine. Set it to -1 to run all batches in all validation dataloaders. Default: 2.
     num_sanity_val_steps: 0
     # 每n个epoch校验一次，即自动调用 validation_step() 函数, 默认为1
-    check_val_every_n_epoch: 1
-    # val_check_interval: 1000 
+    check_val_every_n_epoch: 30 # 2 测试
     # 梯度裁剪
     gradient_clip_val: 1.0

@@ -1,3 +1,4 @@
+import einops
 from torch.utils.data import Dataset
 from data.base import HDF5InterfaceDataset
 
@@ -30,15 +31,18 @@ class VideoDataset(DatasetBase):
 if __name__ == "__main__":
     import mediapy as media
 
-    #################### SMMNIST ########################
-    dataset_root = "/root/autodl-tmp/SMMNIST/SMMNIST_h5"
-    dataset1 = VideoDataset(f"{dataset_root}/train", 20)
-    print(len(dataset1))
-    dataset2 = VideoDataset(f"{dataset_root}/test", 50, 256)
-    print(len(dataset2))
-    video = dataset1[len(dataset1)-1]['video']
-    # [20, 1, 64, 64] [-1,1] float32
-    media.show_video(((video+1)/2).squeeze().numpy(), fps=20)
+    # #################### SMMNIST ########################
+    # dataset_root = "/root/autodl-tmp/SMMNIST/SMMNIST_h5"
+    # dataset1 = VideoDataset(f"{dataset_root}/train", 20)
+    # print(len(dataset1))
+    # dataset2 = VideoDataset(f"{dataset_root}/test", 50, 256)
+    # print(len(dataset2))
+    # video = dataset1[len(dataset1)-1]['video']
+    # video = einops.rearrange(video, "t c h w -> t h w c")
+
+    # print(video.shape)
+    # # [20, 64, 64, 1] [-1,1] float32
+    # media.show_video(((video+1)/2).squeeze().numpy(), fps=20)
 
     #################### KTH ########################
     dataset_root = "/root/autodl-tmp/KTH/KTH_h5"
@@ -46,7 +50,27 @@ if __name__ == "__main__":
     print(len(dataset1))
     dataset2 = VideoDataset(f"{dataset_root}/valid", 50, 256)
     print(len(dataset2))
-    video = dataset1[len(dataset1)-1]['video']
-    # [20, 1, 64, 64] [-1,1] float32
+    # video = dataset1[len(dataset1)-1]['video']
+    video = dataset2[47]['video']
+    video = einops.rearrange(video, "t c h w -> t h w c")
+    print(video.shape)
+    # [20, 64, 64, 1] [-1,1] float32
     media.show_video(((video+1)/2).squeeze().numpy(), fps=20)
+
+    # #################### Cityscapes ########################
+    # dataset_root = "/root/autodl-tmp/Cityscapes/Cityscapes_h5"
+    # dataset1 = VideoDataset(f"{dataset_root}/train", 20)
+    # print(len(dataset1))
+    # dataset2 = VideoDataset(f"{dataset_root}/val", 50, 256)
+    # print(len(dataset2))
+    # video = dataset1[len(dataset1)-1]['video']
+    # video = einops.rearrange(video, "t c h w -> t h w c")
+    # print(video.shape)
+    # # [20, 64, 64, 3] [-1,1] float32
+    # media.show_video(((video+1)/2).squeeze().numpy(), fps=20)
+    # video = dataset2[len(dataset2)-1]['video']
+    # video = einops.rearrange(video, "t c h w -> t h w c")
+    # print(video.shape)
+    # # [20, 64, 64, 3] [-1,1] float32
+    # media.show_video(((video+1)/2).squeeze().numpy(), fps=20)
 
