@@ -20,7 +20,6 @@ from ldm.modules.diffusionmodules.util import (
 from ldm.modules.attention import SpatialTransformer
 
 import einops
-from ldm.modules.temporal_shift import TemporalShift
 
 # dummy replace
 def convert_module_to_f16(x):

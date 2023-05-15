@@ -60,6 +60,7 @@ class DDPM(pl.LightningModule):
     # classic DDPM with Gaussian diffusion, in [video] space
     def __init__(self,
                  unet_config,
+                #  fix_model_config,
                  timesteps=1000,
                  beta_schedule="linear",
                  loss_type="l2",
@@ -102,6 +103,7 @@ class DDPM(pl.LightningModule):
         self.channels = channels
         # self.use_positional_encodings = use_positional_encodings
         self.model = DiffusionWrapper(unet_config, conditioning_key)
+        # self.model = DiffusionWrapper(unet_config, fix_model_config, conditioning_key)
         count_params(self.model, verbose=True)
         self.use_ema = use_ema
         self.ema_rate = ema_rate
@@ -1861,6 +1863,13 @@ class DiffusionWrapper(pl.LightningModule):
         self.conditioning_key = conditioning_key
         assert self.conditioning_key in [None, 'concat', 'crossattn', 'hybrid', 'adm']
 
+    # def __init__(self, diff_model_config, fix_model_config, conditioning_key):
+    #     super().__init__()
+    #     self.diffusion_model = instantiate_from_config(diff_model_config)
+    #     self.fix_model = instantiate_from_config(fix_model_config)
+    #     self.conditioning_key = conditioning_key
+    #     assert self.conditioning_key in [None, 'concat', 'crossattn', 'hybrid', 'adm']
+
     def forward(self, x, t, c_concat: list = None, c_crossattn: list = None):
         # x:
         #   [b, t, c, h, w]
@@ -1877,6 +1886,7 @@ class DiffusionWrapper(pl.LightningModule):
         elif self.conditioning_key == 'concat':
             x_with_c = torch.cat([x] + c_concat, dim=1)
             out = self.diffusion_model(x_with_c, t)
+            # out = self.fix_model(out)
 
         elif self.conditioning_key == 'crossattn':
             cc = torch.cat(c_crossattn, 1)
