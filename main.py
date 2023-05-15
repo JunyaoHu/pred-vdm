@@ -898,9 +898,9 @@ if __name__ == "__main__":
 # CUDA_VISIBLE_DEVICES=0,1 python main.py --base configs/latent-diffusion/kth-ldm-vq-f4.yaml --train --gpus 0,1
 
 # [for training like]
-# CUDA_VISIBLE_DEVICES=0,1 python main.py --base configs/smmnist64.yaml -l /root/autodl-tmp/logs_training --train --gpus 0,1 -f 230509_test01
-# CUDA_VISIBLE_DEVICES=0,1 python main.py --base configs/kth64.yaml -l /root/autodl-tmp/logs_training --train --gpus 0,1 -f 230509_test01
-# CUDA_VISIBLE_DEVICES=0,1 python main.py --base configs/cityscapes128.yaml -l /root/autodl-tmp/logs_training --train --gpus 0,1 -f test
+# CUDA_VISIBLE_DEVICES=0,1 python main.py --base configs/smmnist64.yaml -l /root/autodl-tmp/training_logs --train --gpus 0,1 -f 230515_test
+# CUDA_VISIBLE_DEVICES=0,1 python main.py --base configs/kth64.yaml -l /root/autodl-tmp/training_logs --train --gpus 0,1 -f 230515_test
+# CUDA_VISIBLE_DEVICES=0,1 python main.py --base configs/cityscapes128.yaml -l /root/autodl-tmp/training_logs --train --gpus 0,1 -f test
 # CUDA_VISIBLE_DEVICES=0 python main.py --base configs/kth-ldm-vq-f4.yaml --train --gpus 0,
 # python main.py --base configs/latent-diffusion/kth-ldm-vq-f4.yaml --train
 

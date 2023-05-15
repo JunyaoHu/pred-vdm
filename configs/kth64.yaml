@@ -44,7 +44,6 @@ model:
 
     # cond_stage_config: __is_unconditional__
     cond_stage_config: __is_first_stage__
-
     
     # cond_stage_config:
     #   target: ldm.modules.encoders.modules.MotionStateEmbedder
@@ -131,29 +130,29 @@ data:
   params:
     batch_size: 
       train: 64
-      validation: 100
+      validation: 256
       test: 256
     num_workers: 8
     wrap: false
     train:
       target: data.mydataset.VideoDataset
       params:
-        data_dir: /root/autodl-tmp/KTH/KTH_h5/train
+        data_dir: /root/autodl-tmp/data/KTH/KTH_h5/train
         frames_per_sample: 15
     validation:
       target: data.mydataset.VideoDataset
       params:
-        data_dir: /root/autodl-tmp/KTH/KTH_h5/valid
-        frames_per_sample: 30
-        total_videos: 100
+        data_dir: /root/autodl-tmp/data/KTH/KTH_h5/valid
+        frames_per_sample: 40
+        total_videos: 256
     test:
       target: data.mydataset.VideoDataset
       params:
-        data_dir: /root/autodl-tmp/KTH/KTH_h5/valid
+        data_dir: /root/autodl-tmp/data/KTH/KTH_h5/valid
         frames_per_sample: 40
         total_videos: 256
 
-lightning:
+lightning: 
   callbacks:
     video_logger:
       target: main.VideoLogger

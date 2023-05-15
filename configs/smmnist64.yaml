@@ -130,25 +130,25 @@ data:
   params:
     batch_size: 
       train: 64
-      validation: 100
+      validation: 256
       test: 256
     num_workers: 8
     wrap: false
     train:
       target: data.mydataset.VideoDataset
       params:
-        data_dir: /root/autodl-tmp/SMMNIST/SMMNIST_h5/train
+        data_dir: /root/autodl-tmp/data/SMMNIST/SMMNIST_h5/train
         frames_per_sample: 15
     validation:
       target: data.mydataset.VideoDataset
       params:
-        data_dir: /root/autodl-tmp/SMMNIST/SMMNIST_h5/test
+        data_dir: /root/autodl-tmp/data/SMMNIST/SMMNIST_h5/test
         frames_per_sample: 20
-        total_videos: 100
+        total_videos: 256
     test:
       target: data.mydataset.VideoDataset
       params:
-        data_dir: /root/autodl-tmp/SMMNIST/SMMNIST_h5/test
+        data_dir: /root/autodl-tmp/data/SMMNIST/SMMNIST_h5/test
         frames_per_sample: 20
         total_videos: 256
 
