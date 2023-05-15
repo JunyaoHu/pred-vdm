@@ -102,10 +102,13 @@ model:
         # use_scale_shift_norm: True
         # resblock_updown: True
 
-    # fix_model_config:
-    #   target: models.temperal.TemperalFixModule.TemperalFixModule
-    #   params:
-    #     temperal_channels: 64
+    fix_model_config:
+      target: models.temperal.TemperalFixModule.TemperalFixModule
+      params:
+        temperal_channels: 224
+        shift_conf: 0.5
+        n_segment: 5
+        n_div: 8
 
     
     first_stage_config:

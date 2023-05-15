@@ -64,7 +64,7 @@ model:
     #     inner_factor: 5
 
     image_size: 16
-    VQ_batch_size: 128
+    VQ_batch_size: 256
     channels: 3
     origin_channels: 1
     frame_num:
@@ -101,6 +101,12 @@ model:
         # ps: [context_dim] should be equal to the [embed_dim] of cond_stage_config
         # use_scale_shift_norm: True
         # resblock_updown: True
+
+    # fix_model_config:
+    #   target: models.temperal.TemperalFixModule.TemperalFixModule
+    #   params:
+    #     temperal_channels: 64
+
     
     first_stage_config:
       target: ldm.models.autoencoder.VQModelInterface

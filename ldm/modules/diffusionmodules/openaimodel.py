@@ -623,11 +623,6 @@ class UNetModel(nn.Module):
             ),
         )
 
-        # TODO: time_shift_block
-        # self.time_shift_block = nn.Sequential(
-        #     TemporalShift(nn.Sequential(), n_segment=8, n_div=8, inplace=False)
-        # )
-
         self._feature_size += ch
 
         self.output_blocks = nn.ModuleList([])

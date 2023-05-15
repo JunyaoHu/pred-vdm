@@ -8,26 +8,22 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 class TemporalShift(nn.Module):
-    def __init__(self, net, t, time_shift_conf=0.5, n_segment=3, n_div=8, inplace=False):
+    def __init__(self, net, n_segment=3, n_div=8, inplace=False):
         super(TemporalShift, self).__init__()
         self.net = net
-        self.t = t
         self.n_segment = n_segment
         self.fold_div = n_div
         self.inplace = inplace
-        self.time_shift_conf = time_shift_conf
         
-        if inplace:
-            print('=> Using in-place shift...')
-        print('=> Using fold div: {}'.format(self.fold_div))
+        # if inplace:
+        #     print('=> Using in-place shift...')
+        # print('=> Using fold div: {}'.format(self.fold_div))
 
     def forward(self, x):
-        bs, _, h, w = x.shape
-        x = x.reshape(bs, self.t, -1, h, w)
         bs, _, c, h, w = x.shape
         x = x.reshape(-1, c, h, w)
         x = self.shift(x, self.n_segment, fold_div=self.fold_div, inplace=self.inplace)
-        x = x.reshape(bs, -1, h, w)
+        x = x.reshape(bs, -1, c, h, w)
         return self.net(x)
 
     @staticmethod

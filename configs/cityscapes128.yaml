@@ -1,5 +1,5 @@
 model:
-  base_learning_rate: 1e-06 # 1.5625e-6 # 2e-06 # 4e-07
+  base_learning_rate: 2e-06 # 1.5625e-6 # 2e-06 # 4e-07
   target: ldm.models.diffusion.ddpm.LatentDiffusion
   params:
     # it should be ['eps']
@@ -44,7 +44,6 @@ model:
 
     # cond_stage_config: __is_unconditional__
     cond_stage_config: __is_first_stage__
-
     
     # cond_stage_config:
     #   target: ldm.modules.encoders.modules.MotionStateEmbedder
@@ -102,6 +101,12 @@ model:
         # ps: [context_dim] should be equal to the [embed_dim] of cond_stage_config
         # use_scale_shift_norm: True
         # resblock_updown: True
+
+    # fix_model_config:
+    #   target: models.temperal.TemperalFixModule.TemperalFixModule
+    #   params:
+    #     temperal_channels: 64
+
     
     first_stage_config:
       target: ldm.models.autoencoder.VQModelInterface
@@ -131,7 +136,7 @@ data:
   params:
     batch_size: 
       train: 64
-      validation: 100
+      validation: 256
       test: 256
     num_workers: 8
     wrap: false
@@ -144,8 +149,8 @@ data:
       target: data.mydataset.VideoDataset
       params:
         data_dir: /root/autodl-tmp/Cityscapes/Cityscapes_h5/val
-        frames_per_sample: 16
-        total_videos: 100
+        frames_per_sample: 30
+        total_videos: 256
     test:
       target: data.mydataset.VideoDataset
       params:
@@ -153,7 +158,7 @@ data:
         frames_per_sample: 30
         total_videos: 256
 
-lightning:
+lightning: 
   callbacks:
     video_logger:
       target: main.VideoLogger
@@ -185,7 +190,7 @@ lightning:
     # Sanity check runs n validation batches before starting the training routine. Set it to -1 to run all batches in all validation dataloaders. Default: 2.
     num_sanity_val_steps: 0
     # 每n个epoch校验一次，即自动调用 validation_step() 函数, 默认为1
-    # check_val_every_n_epoch: 30 # 2 测试
-    val_check_interval: 50
+    check_val_every_n_epoch: 30 # 2 测试
+    # val_check_interval: 50
     # 梯度裁剪
     gradient_clip_val: 1.0
