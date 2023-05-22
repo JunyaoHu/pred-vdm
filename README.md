@@ -1,12 +1,4 @@
-# PredVDM: Video Diffusion Model Alleviating Error Accumulation in Prediction
-
-introduction
-
-architecture figure
-
-prediction performance
-
-prediction examples
+# PredVDM: A Video Prediction Model based on Latent Diffusion
 
 # conda 环境配置
 ```
@@ -26,10 +18,7 @@ conda install ffmpeg
 
 pip install opencv-python==4.7.0.72 omegaconf mediapy einops wandb lpips progressbar scikit-image albumentations==1.3.0
 
-# mcvd need
-pip install ninja prettytable 
 
-# pred-vdm 还需要的步骤
 pip install -e .
 cd taming-transformers/
 pip install -e .
@@ -45,41 +34,28 @@ https://www.dropbox.com/s/ge9e5ujwgetktms/i3d_torchscript.pt
 https://onedrive.live.com/download?cid=78EEF3EB6AE7DBCB&resid=78EEF3EB6AE7DBCB%21199&authkey=AApKdFHPXzWLNyI
 
 ```
+# 训练推理
+```
+# [for training like]
+# CUDA_VISIBLE_DEVICES=0,1 python main.py --base configs/smmnist64.yaml     -l /root/autodl-tmp/training_logs --train --gpus 0,1 -f 230515_test
+# CUDA_VISIBLE_DEVICES=0,1 python main.py --base configs/kth64.yaml         -l /root/autodl-tmp/training_logs --train --gpus 0,1 -f 230515_test
+# CUDA_VISIBLE_DEVICES=0,1 python main.py --base configs/cityscapes128.yaml -l /root/autodl-tmp/training_logs --train --gpus 0,1 -f test
+# [for resume from a checkpoint like]
+# CUDA_VISIBLE_DEVICES=0,1 python main.py --resume logs_training/20230220-213917_kth-ldm-vq-f4 --train --gpus 0,1
+# [for test(sampling) like] wait for edit
+# CUDA_VISIBLE_DEVICES=0 python main.py --resume /root/autodl-tmp/training_logs/smmnist64_230519_tcct_para1     --gpus 0, -f test
+# CUDA_VISIBLE_DEVICES=1 python main.py --resume /root/autodl-tmp/training_logs/smmnist64_230522_tcct_para_attn --gpus 0, -f test
+# CUDA_VISIBLE_DEVICES=0 python main.py --resume /root/autodl-tmp/training_logs/kth64_230516_baseline        --gpus 0, -f test
+# CUDA_VISIBLE_DEVICES=0 python main.py --resume /root/autodl-tmp/training_logs/kth64_230518_ct              --gpus 0, -f test
+# CUDA_VISIBLE_DEVICES=0 python main.py --resume /root/autodl-tmp/training_logs/kth64_230517_tcct_para       --gpus 0, -f test
+# CUDA_VISIBLE_DEVICES=0 python main.py --resume /root/autodl-tmp/training_logs/kth64_230520_tcct_para_attn2 --gpus 0, -f test
+# CUDA_VISIBLE_DEVICES=1 python main.py --resume /root/autodl-tmp/training_logs/kth64_230520_tcct_para_attn2 --gpus 0, -f test
 
-
-# mcvd 涉及的主要文件
-## 配置文件
-mcvd/configs/kth64_big.yml
-## 主函数
-mcvd/main.py
-## 运行函数
-mcvd/runners/ncsn_runner.py
-## 基于NCSNpp的diffusion结构
-mcvd/models/better/ncsnpp_more.py
-## 训练
-CUDA_VISIBLE_DEVICES=0,1 python main.py --config ./configs/kth64_big.yml --data_path ../data/KTH/processed --exp checkpoints/kth64-cond10-pred5-my-train --seed 0 --ni
-## 测试和采样
-python code/videoprediction/mcvd/MCVD_demo_KTH.py
-
-# mcvd 涉及的主要文件
-## 配置文件
-pred-vdm/configs/latent-diffusion/kth-ldm-vq-f4.yaml
-## 主函数
-pred-vdm/main.py
-## 运行函数
-mcvd/runners/ncsn_runner.py
-## 基于NCSNpp的diffusion结构
-mcvd/models/better/ncsnpp_more.py
-## 训练
-CUDA_VISIBLE_DEVICES=0 python main.py --base configs/latent-diffusion/kth-ldm-vq-f4.yaml --train --gpus 0,
-## 恢复训练
-CUDA_VISIBLE_DEVICES=0,1 python main.py --resume logs_training/20230220-213917_kth-ldm-vq-f4 --train --gpus 0,1
-## 测试
-CUDA_VISIBLE_DEVICES=0,1 python main.py --resume logs_training/20230220-213917_kth-ldm-vq-f4 --gpus 0,1
-## 采样
-CUDA_VISIBLE_DEVICES=0 python scripts/sample_diffusion.py -r models/ldm/kth_64/checkpoints/last.ckpt -l ./logs_sampling -n 20
+# 主函数main.py
+# 训练和推理进入到./ldm/models/diffusion/ddpm.py
 
 # 数据格式、范围
 save in h5 dataset: [0,255] uint8 numpy (b t c h w)
-
 read in dataloader: [-1,1] float32 torch (b t c h w)
+
+```
