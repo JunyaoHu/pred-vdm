@@ -1,5 +1,9 @@
 # PredVDM: A Video Prediction Model based on Latent Diffusion
 
+![smmnist-compare-0](https://github.com/JunyaoHu/pred-vdm/assets/67564714/c7bb9951-5734-48cd-b334-f0efac9d789e)
+
+![kth-compare-4](https://github.com/JunyaoHu/pred-vdm/assets/67564714/533a3293-50bc-4b76-ac10-f70b87590887)
+
 # conda 环境配置
 ```
 
