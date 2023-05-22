@@ -1,6 +1,6 @@
 # PredVDM: A Video Prediction Model based on Latent Diffusion
 
-![smmnist-compare-0](https://github.com/JunyaoHu/pred-vdm/assets/67564714/c7bb9951-5734-48cd-b334-f0efac9d789e)
+![smmnist-compare-2](https://github.com/JunyaoHu/pred-vdm/assets/67564714/004a8860-3194-4e43-8d86-cce0e29508f6)
 
 ![kth-compare-4](https://github.com/JunyaoHu/pred-vdm/assets/67564714/533a3293-50bc-4b76-ac10-f70b87590887)
 
