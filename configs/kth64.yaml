@@ -1,7 +1,8 @@
 model:
-  base_learning_rate: 2e-06 # 1.5625e-6 # 2e-06 # 4e-07
+  base_learning_rate: 1.5625e-6 # 1.5625e-6 # 2e-06 # 4e-07
   target: ldm.models.diffusion.ddpm.LatentDiffusion
   params:
+    mode: 'tcct_para_attn'
     # it should be ['eps']
     parameterization: eps
     beta_schedule: linear
@@ -84,9 +85,9 @@ model:
         model_channels: 224 #ldm 224 # mcvd 96
         attention_resolutions:
         # note: this isn\t actually the resolution but the downsampling factor.
+        - 1
         - 2
         - 4
-        - 8
         num_res_blocks: 2
         channel_mult:
         - 1
@@ -101,14 +102,6 @@ model:
         # ps: [context_dim] should be equal to the [embed_dim] of cond_stage_config
         # use_scale_shift_norm: True
         # resblock_updown: True
-
-    fix_model_config:
-      target: models.temperal.TemperalFixModule.TemperalFixModule
-      params:
-        temperal_channels: 224
-        shift_conf: 0.5
-        n_segment: 5
-        n_div: 8
 
     
     first_stage_config:
@@ -133,6 +126,23 @@ model:
           dropout: 0.0
         lossconfig:
           target: torch.nn.Identity
+
+    # attn_config:
+    #   tc:
+    #     target: ldm.modules.attention.LinearAttention
+    #     params:
+    #       dim: 15
+    #       heads: 5
+    #       dim_head: 32
+    #   ct:
+    #     target: ldm.modules.attention.LinearAttention
+    #     params:
+    #       dim: 15
+    #       heads: 3
+    #       dim_head: 32
+    attn_config:
+      tc: __is_unconditional__
+      ct: __is_unconditional__
 
 data:
   target: main.DataModuleFromConfig
@@ -177,8 +187,8 @@ lightning:
           # steps: 1000
           # log_every_t: 200
           # sampler_type: ddpm
-          steps: 200
-          log_every_t: 50
+          steps: 100
+          log_every_t: 20
           sampler_type: ddim
 
   trainer:

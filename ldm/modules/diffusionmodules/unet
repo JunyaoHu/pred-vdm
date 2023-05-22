@@ -1,0 +1,42 @@
+1 torch.Size([256, 45, 16, 16])  
+
+2 torch.Size([256, 224, 16, 16])                                                                                                                                      
+2 torch.Size([256, 224, 16, 16])                                                                                                                                      
+2 torch.Size([256, 224, 16, 16]) 
+
+2 torch.Size([256, 224, 8, 8])  
+
+2 torch.Size([256, 448, 8, 8])                                                                                                                                        
+2 torch.Size([256, 448, 8, 8])                                                                                                                                        
+2 torch.Size([256, 448, 4, 4]) 
+
+2 torch.Size([256, 672, 4, 4])  
+2 torch.Size([256, 672, 4, 4])   
+
+2 torch.Size([256, 672, 2, 2])  
+
+2 torch.Size([256, 896, 2, 2])
+2 torch.Size([256, 896, 2, 2])
+
+3 torch.Size([256, 896, 2, 2])
+
+4 torch.Size([256, 896, 2, 2])
+4 torch.Size([256, 896, 2, 2])
+
+4 torch.Size([256, 896, 4, 4])
+
+4 torch.Size([256, 672, 4, 4])
+4 torch.Size([256, 672, 4, 4])
+
+4 torch.Size([256, 672, 8, 8])
+
+4 torch.Size([256, 448, 8, 8])
+4 torch.Size([256, 448, 8, 8])
+
+4 torch.Size([256, 448, 16, 16])
+
+4 torch.Size([256, 224, 16, 16])
+4 torch.Size([256, 224, 16, 16])
+4 torch.Size([256, 224, 16, 16])
+
+5 torch.Size([256, 15, 16, 16])

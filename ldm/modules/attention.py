@@ -94,7 +94,7 @@ class LinearAttention(nn.Module):
         out = torch.einsum('bhde,bhdn->bhen', context, q)
         out = rearrange(out, 'b heads c (h w) -> b (heads c) h w', heads=self.heads, h=h, w=w)
         return self.to_out(out)
-
+    
 
 class SpatialSelfAttention(nn.Module):
     def __init__(self, in_channels):

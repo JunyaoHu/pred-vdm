@@ -898,8 +898,8 @@ if __name__ == "__main__":
 # CUDA_VISIBLE_DEVICES=0,1 python main.py --base configs/latent-diffusion/kth-ldm-vq-f4.yaml --train --gpus 0,1
 
 # [for training like]
-# CUDA_VISIBLE_DEVICES=0,1 python main.py --base configs/smmnist64.yaml -l /root/autodl-tmp/training_logs --train --gpus 0,1 -f 230515_test
-# CUDA_VISIBLE_DEVICES=0,1 python main.py --base configs/kth64.yaml -l /root/autodl-tmp/training_logs --train --gpus 0,1 -f 230515_test
+# CUDA_VISIBLE_DEVICES=0,1 python main.py --base configs/smmnist64.yaml     -l /root/autodl-tmp/training_logs --train --gpus 0,1 -f 230515_test
+# CUDA_VISIBLE_DEVICES=0,1 python main.py --base configs/kth64.yaml         -l /root/autodl-tmp/training_logs --train --gpus 0,1 -f 230515_test
 # CUDA_VISIBLE_DEVICES=0,1 python main.py --base configs/cityscapes128.yaml -l /root/autodl-tmp/training_logs --train --gpus 0,1 -f test
 # CUDA_VISIBLE_DEVICES=0 python main.py --base configs/kth-ldm-vq-f4.yaml --train --gpus 0,
 # python main.py --base configs/latent-diffusion/kth-ldm-vq-f4.yaml --train
@@ -908,8 +908,13 @@ if __name__ == "__main__":
 # CUDA_VISIBLE_DEVICES=0,1 python main.py --resume logs_training/20230220-213917_kth-ldm-vq-f4 --train --gpus 0,1
 
 # [for test(sampling) like] wait for edit
-# CUDA_VISIBLE_DEVICES=0 python main.py --resume logs_training/20230317-082651_kth-ldm-vq-f4 --gpus 0, 
-# CUDA_VISIBLE_DEVICES=0 python main.py --resume logs_training/20230405-042152_kth-ldm-vq-f4 --gpus 0,
+
+# CUDA_VISIBLE_DEVICES=0 python main.py --resume /root/autodl-tmp/training_logs/smmnist64_230519_tcct_para1 --gpus 0, -f test
+
+# CUDA_VISIBLE_DEVICES=0 python main.py --resume /root/autodl-tmp/training_logs/kth64_230516_baseline        --gpus 0, -f test
+# CUDA_VISIBLE_DEVICES=0 python main.py --resume /root/autodl-tmp/training_logs/kth64_230518_ct              --gpus 0, -f test
+# CUDA_VISIBLE_DEVICES=0 python main.py --resume /root/autodl-tmp/training_logs/kth64_230517_tcct_para       --gpus 0, -f test
+# CUDA_VISIBLE_DEVICES=0 python main.py --resume /root/autodl-tmp/training_logs/kth64_230520_tcct_para_attn2 --gpus 0, -f test
 
 # 主函数main.py
 # 训练和推理进入到./ldm/models/diffusion/ddpm.py

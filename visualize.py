@@ -1,3 +1,4 @@
+import random
 import einops
 import os
 import mediapy as media
@@ -23,7 +24,9 @@ def visualize(save_path, origin, result, epoch_num=0, cond_frame_num=10, skip_pi
         save_pic_num = min (len(origin), save_pic_num)
         print(f"video batchsize({len(origin)}) is too small, save_num is set to {save_pic_num}")
     
-    index = [int(i) for i in torch.linspace(0, len(origin)-1, save_pic_num)]
+    # index = [int(i) for i in torch.linspace(0, len(origin)-1, save_pic_num)]
+    index = random.sample(range(len(origin)), save_pic_num)
+    print(index)
     
     origin = origin[index].cpu()
     result = result[index].cpu()
@@ -40,7 +43,7 @@ def visualize(save_path, origin, result, epoch_num=0, cond_frame_num=10, skip_pi
         for i in range(save_pic_num):
             two_video = all_video[:, i]
             two_video[1, :cond_frame_num] = 1.0
-            two_video = two_video[::skip_pic_num]
+            two_video = two_video[:,::skip_pic_num]
             # [2 t c h w]
             two_video = einops.rearrange(two_video, "b t c h w -> (b h) (t w) c")
             # result of cond_frame set to blank frame
@@ -58,8 +61,10 @@ def visualize(save_path, origin, result, epoch_num=0, cond_frame_num=10, skip_pi
         for i in range(save_pic_num):
             media.write_video(os.path.join(save_gif_path, f"gif_epoch{epoch_num}_origin{i}.gif"), origin_output[i].squeeze().numpy(), codec='gif', fps=20)
             media.write_video(os.path.join(save_gif_path, f"gif_epoch{epoch_num}_result{i}.gif"), result_output[i].squeeze().numpy(), codec='gif', fps=20)
-            save_path = os.path.join(save_gif_path, f"gif_epoch{epoch_num}_result{i}.gif")
-        result_path_output.append(save_path)
+            save_path_origin = os.path.join(save_gif_path, f"gif_epoch{epoch_num}_origin{i}.gif")
+            save_path_result = os.path.join(save_gif_path, f"gif_epoch{epoch_num}_result{i}.gif")
+        result_path_output.append(save_path_origin)
+        result_path_output.append(save_path_result)
         
     # 输出视频对比网格
     if save_gif_grid:

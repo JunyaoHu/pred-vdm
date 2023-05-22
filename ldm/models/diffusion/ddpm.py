@@ -6,6 +6,7 @@ https://github.com/CompVis/taming-transformers
 -- merci
 """
 
+import einops
 import torch
 import torch.nn as nn
 import numpy as np
@@ -60,7 +61,9 @@ class DDPM(pl.LightningModule):
     # classic DDPM with Gaussian diffusion, in [video] space
     def __init__(self,
                  unet_config,
-                 fix_model_config,
+                 mode,
+                #  fix_model_config,
+                 attn_config,
                  timesteps=1000,
                  beta_schedule="linear",
                  loss_type="l2",
@@ -101,9 +104,13 @@ class DDPM(pl.LightningModule):
         self.image_size = image_size  # try conv?
         self.VQ_batch_size = VQ_batch_size
         self.channels = channels
+
         # self.use_positional_encodings = use_positional_encodings
-        # self.model = DiffusionWrapper(unet_config, conditioning_key)
-        self.model = DiffusionWrapper(unet_config, fix_model_config, conditioning_key)
+        
+        # self.model = DiffusionWrapper(unet_config, mode, conditioning_key)
+        self.model = DiffusionWrapper(unet_config, attn_config, mode, conditioning_key)
+        # self.model = DiffusionWrapper(unet_config, fix_model_config, conditioning_key)
+
         count_params(self.model, verbose=True)
         self.use_ema = use_ema
         self.ema_rate = ema_rate
@@ -1857,18 +1864,30 @@ class LatentDiffusion(DDPM):
 
 # DiffusionWrapper(unet_config, conditioning_key(crossattn))
 class DiffusionWrapper(pl.LightningModule):
-    # def __init__(self, diff_model_config, conditioning_key):
-    #     super().__init__()
-    #     self.diffusion_model = instantiate_from_config(diff_model_config)
-    #     self.conditioning_key = conditioning_key
-    #     assert self.conditioning_key in [None, 'concat', 'crossattn', 'hybrid', 'adm']
-
-    def __init__(self, diff_model_config, fix_model_config, conditioning_key):
+    def __init__(self, diff_model_config, attn_config, mode, conditioning_key):
         super().__init__()
         self.diffusion_model = instantiate_from_config(diff_model_config)
-        self.fix_model = instantiate_from_config(fix_model_config)
+        self.tc_attn = instantiate_from_config(attn_config['tc'])
+        self.ct_attn = instantiate_from_config(attn_config['ct'])
+        self.mode = mode
         self.conditioning_key = conditioning_key
+        assert self.mode in ['tc', 'ct', 'tcct_para', 'tcct_para_attn']
         assert self.conditioning_key in [None, 'concat', 'crossattn', 'hybrid', 'adm']
+
+    # def __init__(self, diff_model_config, mode, conditioning_key):
+    #     super().__init__()
+    #     self.diffusion_model = instantiate_from_config(diff_model_config)
+    #     self.mode = mode
+    #     self.conditioning_key = conditioning_key
+    #     assert self.mode in ['tc', 'ct', 'tcct_para', 'tcct_para_attention']
+    #     assert self.conditioning_key in [None, 'concat', 'crossattn', 'hybrid', 'adm']
+
+    # def __init__(self, diff_model_config, fix_model_config, conditioning_key):
+    #     super().__init__()
+    #     self.diffusion_model = instantiate_from_config(diff_model_config)
+    #     self.fix_model = instantiate_from_config(fix_model_config)
+    #     self.conditioning_key = conditioning_key
+    #     assert self.conditioning_key in [None, 'concat', 'crossattn', 'hybrid', 'adm']
 
     def forward(self, x, t, c_concat: list = None, c_crossattn: list = None):
         # x:
@@ -1885,8 +1904,46 @@ class DiffusionWrapper(pl.LightningModule):
 
         elif self.conditioning_key == 'concat':
             x_with_c = torch.cat([x] + c_concat, dim=1)
-            out = self.diffusion_model(x_with_c, t)
-            out = self.fix_model(out)
+
+            if self.mode == 'tc':
+                in1 = einops.rearrange(x_with_c, "b t c h w -> b (t c) h w")
+                out = self.diffusion_model(in1, t)
+                out = einops.rearrange(out, "b (t c) h w -> b t c h w", c = 3)
+            elif self.mode == 'ct':
+                in1 = einops.rearrange(x_with_c, "b t c h w -> b (c t) h w")
+                out = self.diffusion_model(in1, t)
+                out = einops.rearrange(out, "b (c t) h w -> b t c h w", c = 3)
+            elif self.mode == 'tcct_para':
+                in1 = einops.rearrange(x_with_c, "b t c h w -> b (t c) h w")
+                out1 = self.diffusion_model(in1, t)
+                out1 = einops.rearrange(out1, "b (t c) h w -> b t c h w", c = 3)
+                
+                in2 = einops.rearrange(x_with_c, "b t c h w -> b (c t) h w")
+                out2 = self.diffusion_model(in2, t)
+                out2 = einops.rearrange(out2, "b (c t) h w -> b t c h w", c = 3)
+
+                del x_with_c, in1, in2
+
+                out = (out1 + out2) / 2
+
+            elif self.mode == 'tcct_para_attn':
+                in1 = einops.rearrange(x_with_c, "b t c h w -> b (t c) h w")
+                out1 = self.diffusion_model(in1, t)
+                factor_out1 = self.tc_attn(out1)
+                out1 = factor_out1*out1
+                out1 = einops.rearrange(out1, "b (t c) h w -> b t c h w", c = 3)
+
+                in2 = einops.rearrange(x_with_c, "b t c h w -> b (c t) h w")
+                out2 = self.diffusion_model(in2, t)
+                factor_out2 = self.ct_attn(out2)
+                out2 = factor_out2*out2
+                out2 = einops.rearrange(out2, "b (c t) h w -> b t c h w", c = 3)
+
+                del x_with_c, in1, in2, factor_out1, factor_out2
+
+                out = out1 + out2
+            else:
+                NotImplementedError()
 
         elif self.conditioning_key == 'crossattn':
             cc = torch.cat(c_crossattn, 1)

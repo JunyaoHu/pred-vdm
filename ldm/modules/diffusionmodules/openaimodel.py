@@ -712,11 +712,11 @@ class UNetModel(nn.Module):
     def forward(self, x, timesteps=None, context=None, y=None,**kwargs):
         """
         Apply the model to an input batch.
-        :param x: an [N x T x C x ...] Tensor of inputs.
+        :param x: an [N x C x ...] Tensor of inputs.
         :param timesteps: a 1-D batch of timesteps.
         :param context: conditioning plugged in via crossattn
         :param y: an [N] Tensor of labels, if class-conditional.
-        :return: an [N x T x C x ...] Tensor of outputs.
+        :return: an [N x C x ...] Tensor of outputs.
         """
         assert (y is not None) == (
             self.num_classes is not None
@@ -725,7 +725,7 @@ class UNetModel(nn.Module):
         t_emb = timestep_embedding(timesteps, self.model_channels, repeat_only=False)
         emb = self.time_embed(t_emb)
 
-        x = einops.rearrange(x, "b t c h w -> b (t c) h w")
+        # x = einops.rearrange(x, "b t c h w -> b (t c) h w")
 
         if self.num_classes is not None:
             assert y.shape == (x.shape[0],)
@@ -748,7 +748,7 @@ class UNetModel(nn.Module):
 
         h = self.out(h)
 
-        h = einops.rearrange(h, "b (t c) h w -> b t c h w", c = 3)
+        # h = einops.rearrange(h, "b (t c) h w -> b t c h w", c = 3)
 
         return h
         

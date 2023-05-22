@@ -76,9 +76,6 @@ class DPMSolverSampler(object):
         else:
             img = x_T
 
-        print("conditioning 0" ,conditioning[0].shape)
-        print("conditioning 1" ,conditioning[1].shape)
-
         model_fn = model_wrapper(
             lambda x, t, c: self.model.apply_model(x, t, c),
             self.noise_schedule,

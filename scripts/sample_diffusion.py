@@ -76,151 +76,239 @@ def logs2pil(logs, keys=["sample"]):
 
 
 @torch.no_grad()
-def sample_log(model, batch, frame_cond, frame_pred, sampler_type, steps, log_every_t, shape, **kwargs):
+def sample_log(model, batch, frame_cond, frame_pred, is_valid, sampler_type, steps, log_every_t, shape, **kwargs):
 
-    print("sampler_type, steps, log_every_t:",sampler_type, steps, log_every_t)
-    
-    # print(z_pred.shape, z_cond_init.shape, x_pred.shape, x_rec.shape, x_cond_init.shape)
+    if is_valid:
+        batch = batch[:,:frame_cond+frame_pred]
 
-    # x_cond_init   [64, cond, 3, 64, 64]
-    # z_cond_init   [64, cond, 3, 16, 16], [64, cond-1, 1, 16, 16]
-    # x_pred        [64, pred, 3, 64, 64] 
-    # z_pred        [64, pred, 3, 16, 16] 
-    # x_rec         [64, pred, 3, 64, 64] 
-    
-    if model.frame_num.cond != frame_cond:
-        import gradio as gr
-        raise gr.Error(f'模型条件帧数 ({model.frame_num.cond}) 和设置条件帧数 ({frame_cond}) 不一致')
+        print("sampler_type, steps, log_every_t:",sampler_type, steps, log_every_t)
         
-    import time 
-    
-    start_time = time.time()
-    
-    x_origin = batch.cuda()
-    z_origin = model.video_batch_encode(x_origin)
-    
-    x_cond_init = x_origin[:, :model.frame_num.cond]
-    print("x_cond_init", x_cond_init.shape)
-    z_cond_init = z_origin[:, :model.frame_num.cond]
-    print("z_cond_init", z_cond_init.shape)
-    
-    z_pred = z_origin[:, model.frame_num.cond:]
+        # print(z_pred.shape, z_cond_init.shape, x_pred.shape, x_rec.shape, x_cond_init.shape)
 
-    batch_size      = z_pred.shape[0]
-    pred_length     = z_pred.shape[1]
-
-    x_cond          = x_cond_init
-    
-    z_cond          = z_cond_init
-    z_sample        = z_cond_init
-    
-    # z_cond          = z_cond_init[0]
-    # z_cond_optical  = z_cond_init[1]
-
-    # z_sample = z_cond_init[0]
-    
-    x_sample = x_cond_init
-
-    z_intermediates = []
-
-    z_intermediates_real = z_pred.unsqueeze(0)
-
-    import math
-    autoregression = math.ceil( pred_length / model.frame_num.k)
-    
-    now_cond  = z_cond_init
-
-    for _ in range(autoregression):
-        now_noisy = torch.randn(batch_size, model.frame_num.k, model.channels, model.image_size, model.image_size).cuda()
-        print(sampler_type, "sampler_type")
-        if sampler_type == 'DDIM':
-            ddim_sampler = DDIMSampler(model)
-            print(now_cond.shape, now_noisy.shape)
-            tmp_z_sample, tmp_z_intermediates = ddim_sampler.sample(steps, batch_size, shape, conditioning=now_cond, verbose=False, x_T=now_noisy, log_every_t=log_every_t, **kwargs)
-            z_intermediates.append(torch.stack(tmp_z_intermediates['x_inter'])) # 'pred_x0' is DDIM's predicted x0
-        elif sampler_type == 'DDPM':
-            tmp_z_sample, tmp_z_intermediates = model.sample(now_cond, shape, batch_size=batch_size, return_intermediates=True, x_T=now_noisy, verbose=False)
-            z_intermediates.append(torch.stack(tmp_z_intermediates))
-        elif sampler_type == 'DPM Solver++':             
-            dpmsolver_sampler = DPMSolverSampler(model)
-            tmp_z_sample, tmp_z_intermediates = dpmsolver_sampler.sample(steps, batch_size, shape, conditioning=now_cond, verbose=False, x_T=now_noisy, log_every_t=log_every_t, **kwargs)
-            z_intermediates.append(torch.stack(tmp_z_intermediates))
-        else:
-            NotImplementedError()
-
-        z_sample = torch.cat([z_sample, tmp_z_sample], dim=1)
-
-        # print("tmp_z_sample", tmp_z_sample.shape) # [64, 5, 3, 16, 16]
-        tmp_x_sample = model.video_batch_decode(tmp_z_sample).clamp(-1.,1.)
-        # print("tmp_x_samples", tmp_x_sample.shape) #[64, 5, 3, 64, 64]
-        x_sample =  torch.cat([x_sample, tmp_x_sample], dim=1)
+        # x_cond_init   [64, cond, 3, 64, 64]
+        # z_cond_init   [64, cond, 3, 16, 16], [64, cond-1, 1, 16, 16]
+        # x_pred        [64, pred, 3, 64, 64] 
+        # z_pred        [64, pred, 3, 16, 16] 
+        # x_rec         [64, pred, 3, 64, 64] 
         
-        x_cond = torch.cat([x_cond, x_sample], dim=1)[:,-model.frame_num.cond:]
-        # print("x_cond", x_cond.shape) # [64, 10, 3, 64, 64]
-
-        if model.cond_stage_key == "condition_frames_latent":
-            tmp_z_cond          = tmp_z_sample
-            z_cond              = torch.cat([z_cond,         tmp_z_cond],         dim=1)[:,-model.frame_num.cond:]
-            now_cond =  z_cond
-        else:
-            NotImplementedError()
+        if model.frame_num.cond != frame_cond:
+            import gradio as gr
+            raise gr.Error(f'模型条件帧数 ({model.frame_num.cond}) 和设置条件帧数 ({frame_cond}) 不一致')
+            
+        import time 
         
+        start_time = time.time()
+        
+        x_origin = batch.cuda()
+        z_origin = model.video_batch_encode(x_origin)
+        
+        x_cond_init = x_origin[:, :model.frame_num.cond]
+        print("x_cond_init", x_cond_init.shape)
+        z_cond_init = z_origin[:, :model.frame_num.cond]
+        print("z_cond_init", z_cond_init.shape)
+        
+        z_pred = z_origin[:, model.frame_num.cond:]
 
-    # rank_zero_info(f"get input encode")
-    # start = time.time()
-    # rank_zero_info(f"get input encode done         {time.time() - start}")  # about 0.18 seconds
+        batch_size      = batch.shape[0]
+        pred_length     = frame_pred
 
-    z_intermediates = torch.cat(z_intermediates, dim=2)
-    z_intermediates = z_intermediates[:,:,:z_intermediates_real.shape[2]]
-    z_intermediates = torch.cat([z_intermediates_real, z_intermediates], dim=0)
+        x_cond          = x_cond_init
+        
+        z_cond          = z_cond_init
+        z_sample        = z_cond_init
+        
+        x_sample = x_cond_init
 
-    z_sample = z_sample[:,model.frame_num.cond:model.frame_num.cond+pred_length]
-    x_sample = x_sample[:,model.frame_num.cond:model.frame_num.cond+pred_length]
+        z_intermediates = []
 
-    print(f"fps: {autoregression * model.frame_num.k / (time.time() - start_time)}")
+        z_intermediates_real = z_pred.unsqueeze(0)
 
-    return {
-        'x_origin': x_origin,
-        'z_origin': z_pred,
-        'condition': x_cond_init,
-        'x_sample': x_sample,
-        'z_sample': z_sample,
-        'z_intermediates': z_intermediates,
-    }
+        import math
+        autoregression = math.ceil( pred_length / model.frame_num.k)
+        
+        now_cond  = z_cond_init
+
+        for _ in range(autoregression):
+            now_noisy = torch.randn(batch_size, model.frame_num.k, model.channels, model.image_size, model.image_size).cuda()
+            print(sampler_type, "sampler_type")
+            if sampler_type == 'DDIM':
+                ddim_sampler = DDIMSampler(model)
+                print(now_cond.shape, now_noisy.shape)
+                tmp_z_sample, tmp_z_intermediates = ddim_sampler.sample(steps, batch_size, shape, conditioning=now_cond, verbose=False, x_T=now_noisy, log_every_t=log_every_t, **kwargs)
+                z_intermediates.append(torch.stack(tmp_z_intermediates['x_inter'])) # 'pred_x0' is DDIM's predicted x0
+            elif sampler_type == 'DDPM':
+                tmp_z_sample, tmp_z_intermediates = model.sample(now_cond, shape, batch_size=batch_size, return_intermediates=True, x_T=now_noisy, verbose=False)
+                z_intermediates.append(torch.stack(tmp_z_intermediates))
+            elif sampler_type == 'DPM Solver++':             
+                dpmsolver_sampler = DPMSolverSampler(model)
+                tmp_z_sample, tmp_z_intermediates = dpmsolver_sampler.sample(steps, batch_size, shape, conditioning=now_cond, verbose=False, x_T=now_noisy, log_every_t=log_every_t, **kwargs)
+                z_intermediates.append(torch.stack(tmp_z_intermediates))
+            else:
+                NotImplementedError()
+
+            z_sample = torch.cat([z_sample, tmp_z_sample], dim=1)
+
+            # print("tmp_z_sample", tmp_z_sample.shape) # [64, 5, 3, 16, 16]
+            tmp_x_sample = model.video_batch_decode(tmp_z_sample).clamp(-1.,1.)
+            # print("tmp_x_samples", tmp_x_sample.shape) #[64, 5, 3, 64, 64]
+            x_sample =  torch.cat([x_sample, tmp_x_sample], dim=1)
+            
+            x_cond = torch.cat([x_cond, x_sample], dim=1)[:,-model.frame_num.cond:]
+            # print("x_cond", x_cond.shape) # [64, 10, 3, 64, 64]
+
+            if model.cond_stage_key == "condition_frames_latent":
+                tmp_z_cond          = tmp_z_sample
+                z_cond              = torch.cat([z_cond,         tmp_z_cond],         dim=1)[:,-model.frame_num.cond:]
+                now_cond =  z_cond
+            else:
+                NotImplementedError()
+            
+        z_intermediates = torch.cat(z_intermediates, dim=2)
+        z_intermediates = z_intermediates[:,:,:z_intermediates_real.shape[2]]
+        z_intermediates = torch.cat([z_intermediates_real, z_intermediates], dim=0)
+
+        z_sample = z_sample[:,model.frame_num.cond:model.frame_num.cond+pred_length]
+        x_sample = x_sample[:,model.frame_num.cond:model.frame_num.cond+pred_length]
+
+        print(f"fps: {autoregression * model.frame_num.k / (time.time() - start_time)}")
+
+        return {
+            'x_origin': x_origin,
+            'z_origin': z_pred,
+            'condition': x_cond_init,
+            'x_sample': x_sample,
+            'z_sample': z_sample,
+            'z_intermediates': z_intermediates,
+        }
+    else:
+        batch = batch[:,:frame_cond]
+        print("sampler_type, steps, log_every_t:",sampler_type, steps, log_every_t)
+        # print(z_pred.shape, z_cond_init.shape, x_pred.shape, x_rec.shape, x_cond_init.shape)
+        # x_cond_init   [64, cond, 3, 64, 64]
+        # z_cond_init   [64, cond, 3, 16, 16], [64, cond-1, 1, 16, 16]
+        # x_pred        [64, pred, 3, 64, 64] 
+        # z_pred        [64, pred, 3, 16, 16] 
+        # x_rec         [64, pred, 3, 64, 64] 
+        if model.frame_num.cond != frame_cond:
+            import gradio as gr
+            raise gr.Error(f'模型条件帧数 ({model.frame_num.cond}) 和设置条件帧数 ({frame_cond}) 不一致')
+        import time 
+        start_time = time.time()
+        x_origin = batch.cuda()
+        z_origin = model.video_batch_encode(x_origin)
+        x_cond_init = x_origin[:, :model.frame_num.cond]
+        print("x_cond_init", x_cond_init.shape)
+        z_cond_init = z_origin[:, :model.frame_num.cond]
+        print("z_cond_init", z_cond_init.shape)
+
+        batch_size      = batch.shape[0]
+        pred_length     = frame_pred
+
+        x_cond          = x_cond_init
+        
+        z_cond          = z_cond_init
+        z_sample        = z_cond_init
+        
+        x_sample = x_cond_init
+
+        z_intermediates = []
+
+        import math
+        autoregression = math.ceil( pred_length / model.frame_num.k)
+        
+        now_cond  = z_cond_init
+
+        for _ in range(autoregression):
+            now_noisy = torch.randn(batch_size, model.frame_num.k, model.channels, model.image_size, model.image_size).cuda()
+            print(sampler_type, "sampler_type")
+            if sampler_type == 'DDIM':
+                ddim_sampler = DDIMSampler(model)
+                print(now_cond.shape, now_noisy.shape)
+                tmp_z_sample, tmp_z_intermediates = ddim_sampler.sample(steps, batch_size, shape, conditioning=now_cond, verbose=False, x_T=now_noisy, log_every_t=log_every_t, **kwargs)
+                z_intermediates.append(torch.stack(tmp_z_intermediates['x_inter'])) # 'pred_x0' is DDIM's predicted x0
+            elif sampler_type == 'DDPM':
+                tmp_z_sample, tmp_z_intermediates = model.sample(now_cond, shape, batch_size=batch_size, return_intermediates=True, x_T=now_noisy, verbose=False)
+                z_intermediates.append(torch.stack(tmp_z_intermediates))
+            elif sampler_type == 'DPM Solver++':             
+                dpmsolver_sampler = DPMSolverSampler(model)
+                tmp_z_sample, tmp_z_intermediates = dpmsolver_sampler.sample(steps, batch_size, shape, conditioning=now_cond, verbose=False, x_T=now_noisy, log_every_t=log_every_t, **kwargs)
+                z_intermediates.append(torch.stack(tmp_z_intermediates))
+            else:
+                NotImplementedError()
+
+            z_sample = torch.cat([z_sample, tmp_z_sample], dim=1)
+
+            # print("tmp_z_sample", tmp_z_sample.shape) # [64, 5, 3, 16, 16]
+            tmp_x_sample = model.video_batch_decode(tmp_z_sample).clamp(-1.,1.)
+            # print("tmp_x_samples", tmp_x_sample.shape) #[64, 5, 3, 64, 64]
+            x_sample =  torch.cat([x_sample, tmp_x_sample], dim=1)
+            
+            x_cond = torch.cat([x_cond, x_sample], dim=1)[:,-model.frame_num.cond:]
+            # print("x_cond", x_cond.shape) # [64, 10, 3, 64, 64]
+
+            if model.cond_stage_key == "condition_frames_latent":
+                tmp_z_cond          = tmp_z_sample
+                z_cond              = torch.cat([z_cond,         tmp_z_cond],         dim=1)[:,-model.frame_num.cond:]
+                now_cond =  z_cond
+            else:
+                NotImplementedError()
+                
+        z_intermediates = torch.cat(z_intermediates, dim=2)
+        z_intermediates = z_intermediates[:,:,:frame_pred]
+
+        z_sample = z_sample[:,model.frame_num.cond:model.frame_num.cond+pred_length]
+        x_sample = x_sample[:,model.frame_num.cond:model.frame_num.cond+pred_length]
+
+        print(f"fps: {autoregression * model.frame_num.k / (time.time() - start_time)}")
+
+        return {
+            'x_origin': x_origin,
+            'condition': x_cond_init,
+            'x_sample': x_sample,
+            'z_sample': z_sample,
+            'z_intermediates': z_intermediates,
+        }
 
 @torch.no_grad()
-def make_convolutional_sample(config, model, batch, frame_cond, frame_pred, eta=1.0, sampler_type = "DDIM", log_every_t=50, steps=200):
-    log = dict()
-
-    # (10, 180, 16, 16)
-    shape = [model.frame_num.k,
-             model.channels,
-             model.image_size,
-             model.image_size]
-
-    with model.ema_scope("Plotting"):
-        t0 = time.time()
-        # if vanilla:
-        #     sample, progrow = convsample(model, shape,
-        #                                  make_prog_row=True)
-        # else:
-        #     sample, intermediates = convsample_ddim(model,  steps=custom_steps, shape=shape,
-        #                                             eta=eta)
-        
-        result = sample_log(model, batch, frame_cond, frame_pred, sampler_type=sampler_type, steps=steps, log_every_t=log_every_t, eta=eta, shape=shape)
-        
-        t1 = time.time()
-
-    # output [-1,1]
-    print(torch.min(result['x_sample']), torch.min(result['z_sample']))
-    print(torch.max(result['x_sample']), torch.max(result['z_sample']))
-
-    log = result
-    log["time"] = t1 - t0
-    return log
-
-
-def run(config, model, logdir, frame_cond, frame_pred, test_video_path='', sampler_type='DDIM', steps=200, log_every_t=50, eta=None, nplog=None):
+def make_convolutional_sample(model, batch, frame_cond, frame_pred, is_valid=True, eta=1.0, sampler_type = "DDIM", log_every_t=50, steps=200):
+    # 验证，有cond和pred。
+    if is_valid:
+        log = dict()
+        # (10, 180, 16, 16)
+        shape = [model.frame_num.k,
+                model.channels,
+                model.image_size,
+                model.image_size]
+        with model.ema_scope("Plotting"):
+            t0 = time.time()
+            result = sample_log(model, batch, frame_cond, frame_pred, is_valid=is_valid, sampler_type=sampler_type, steps=steps, log_every_t=log_every_t, eta=eta, shape=shape)
+            t1 = time.time()
+        # output [-1,1]
+        print(torch.min(result['x_sample']), torch.min(result['z_sample']))
+        print(torch.max(result['x_sample']), torch.max(result['z_sample']))
+        log = result
+        log["time"] = t1 - t0
+        return log
+    # 测试，只有cond。
+    else:
+        log = dict()
+        # (10, 180, 16, 16)
+        shape = [model.frame_num.k,
+                model.channels,
+                model.image_size,
+                model.image_size]
+        with model.ema_scope("Plotting"):
+            t0 = time.time()
+            result = sample_log(model, batch, frame_cond, frame_pred, is_valid=is_valid, sampler_type=sampler_type, steps=steps, log_every_t=log_every_t, eta=eta, shape=shape)
+            t1 = time.time()
+        # output [-1,1]
+        print(torch.min(result['x_sample']), torch.min(result['z_sample']))
+        print(torch.max(result['x_sample']), torch.max(result['z_sample']))
+        log = result
+        log["time"] = t1 - t0
+        return log
+    
+def run(model, logdir, frame_cond, frame_pred, test_video_path='', is_valid=True, sampler_type='DDIM', steps=200, log_every_t=50, comparison_step=1, eta=None, nplog=None):
     print(f'Using {sampler_type} sampling with {steps} sampling steps.')
 
     start = time.time()
@@ -252,9 +340,10 @@ def run(config, model, logdir, frame_cond, frame_pred, test_video_path='', sampl
         batch = torch.tensor(batch).unsqueeze(0).float()/125.5 - 1
         import einops
         batch = einops.rearrange(batch, 'b t h w c -> b t c h w')
+
         print(batch.shape,torch.min(batch),torch.max(batch))
         # B T H W C
-        logs = make_convolutional_sample(config, model, batch=batch, frame_cond=frame_cond, frame_pred=frame_pred, sampler_type=sampler_type, steps=steps,log_every_t=log_every_t, eta=eta)
+        logs = make_convolutional_sample(model, batch=batch, frame_cond=frame_cond, frame_pred=frame_pred, is_valid=is_valid, sampler_type=sampler_type, steps=steps,log_every_t=log_every_t, eta=eta)
         
         runtime = (time.time() - start)
         
@@ -265,18 +354,22 @@ def run(config, model, logdir, frame_cond, frame_pred, test_video_path='', sampl
         print(logs['x_sample'].shape)
         print(logs['z_intermediates'].shape)
         
-        
         origin = logs['x_origin'].cpu()
         result = torch.cat([logs['condition'].cpu(), logs['x_sample'].cpu()],dim=1)
         
         origin = (origin +1) /2
         result = (result +1) /2
+
+        if is_valid:
+            origin = origin
+        else:
+            origin = torch.cat([origin, torch.ones_like(logs['x_sample'].cpu())],dim=1)
         
         print(origin.shape, result.shape)
         
         from visualize import visualize
         
-        decomposition, prediction, comparsion = visualize(
+        decomposition, ground_truth, prediction, comparsion = visualize(
             save_path=logdir,
             origin=origin,
             result=result,
@@ -285,6 +378,7 @@ def run(config, model, logdir, frame_cond, frame_pred, test_video_path='', sampl
             save_pic_row=True,
             save_gif=True,
             cond_frame_num=frame_cond,  
+            skip_pic_num=comparison_step
         )
         
         # torch.Size([13, 1, 10, 3, 16, 16])
@@ -294,7 +388,7 @@ def run(config, model, logdir, frame_cond, frame_pred, test_video_path='', sampl
         step_image = np.array((step_image + 1.0) / 2.0)  # -1,1 -> 0,1; c,h,w
         media.write_image(step_output_path, step_image)
         
-        return decomposition, prediction, comparsion, step_output_path, runtime
+        return decomposition, ground_truth, prediction, comparsion, step_output_path, runtime
         
         # save_logs(logs, logdir, key="x_sample")
         # return {
@@ -469,11 +563,11 @@ def main():
         yaml.dump(sampling_conf, f, default_flow_style=False)
     print(sampling_conf)
     
-    run(config, model, video_logdir, eta=opt.eta,
+    run(model, video_logdir, eta=opt.eta,
         vanilla=opt.vanilla_sample, steps=opt.steps,
         test_video_path=opt.test_video_path)
    
-def do_predict(root, resume, logdir, test_video_path, frame_cond, frame_pred, sampler_type='DDIM', steps=200, log_every_t=50, eta=1.0):
+def do_predict(root, resume, logdir, test_video_path, frame_cond, frame_pred, comparison_step=1, is_valid=True, sampler_type='DDIM', steps=200, log_every_t=50, eta=1.0):
     if not os.path.exists(resume):
         raise ValueError("Cannot find {}".format(resume))
     if os.path.isfile(resume):
@@ -532,16 +626,17 @@ def do_predict(root, resume, logdir, test_video_path, frame_cond, frame_pred, sa
     print(75 * "=")
     
     result = run(
-        configs, 
         model, 
         video_logdir, 
         frame_cond, 
         frame_pred, 
         test_video_path,
+        is_valid=is_valid,
         sampler_type=sampler_type, 
         eta=eta, 
         steps=steps,
         log_every_t=log_every_t,
+        comparison_step=comparison_step,
     )
     
     return result
