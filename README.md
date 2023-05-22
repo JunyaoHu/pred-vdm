@@ -2,6 +2,8 @@
 
 ![smmnist-compare-2](https://github.com/JunyaoHu/pred-vdm/assets/67564714/004a8860-3194-4e43-8d86-cce0e29508f6)
 
+![image](https://github.com/JunyaoHu/pred-vdm/assets/67564714/7a5cae3a-38d1-48ef-a313-369124f7fc3e)
+
 ![kth-compare-4](https://github.com/JunyaoHu/pred-vdm/assets/67564714/533a3293-50bc-4b76-ac10-f70b87590887)
 
 # conda 环境配置
