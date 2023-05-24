@@ -1,4 +1,4 @@
-# PredVDM: A Video Prediction Model based on Latent Diffusion
+# 基于潜在扩散过程的视频预测模型
 
 ![smmnist-compare-2](https://github.com/JunyaoHu/pred-vdm/assets/67564714/004a8860-3194-4e43-8d86-cce0e29508f6)
 
@@ -8,9 +8,14 @@
 
 ![image (2)](https://github.com/JunyaoHu/pred-vdm/assets/67564714/8951d9e8-7663-4107-9e7c-596cdf378f88)
 
-
 ![image](https://github.com/JunyaoHu/pred-vdm/assets/67564714/47841e09-41a2-4ccc-bae2-76ff628fefba)
+
 ![image (1)](https://github.com/JunyaoHu/pred-vdm/assets/67564714/2593a0c9-5ed9-4883-ad4d-cf66791cfd55)
+
+![image](https://github.com/JunyaoHu/pred-vdm/assets/67564714/a559dc13-b095-4262-926d-9dc02d44ac9d)
+
+![image](https://github.com/JunyaoHu/pred-vdm/assets/67564714/856b79ed-b6ac-4418-a5bc-51dd551f110b)
+
 
 # conda 环境配置
 ```
