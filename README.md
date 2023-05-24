@@ -4,7 +4,13 @@
 
 ![image](https://github.com/JunyaoHu/pred-vdm/assets/67564714/7a5cae3a-38d1-48ef-a313-369124f7fc3e)
 
-![kth-compare-4](https://github.com/JunyaoHu/pred-vdm/assets/67564714/533a3293-50bc-4b76-ac10-f70b87590887)
+![kth-compare-5](https://github.com/JunyaoHu/pred-vdm/assets/67564714/f9cb3774-81b6-4961-8d35-768904b30a33)
+
+![image (2)](https://github.com/JunyaoHu/pred-vdm/assets/67564714/8951d9e8-7663-4107-9e7c-596cdf378f88)
+
+
+![image](https://github.com/JunyaoHu/pred-vdm/assets/67564714/47841e09-41a2-4ccc-bae2-76ff628fefba)
+![image (1)](https://github.com/JunyaoHu/pred-vdm/assets/67564714/2593a0c9-5ed9-4883-ad4d-cf66791cfd55)
 
 # conda 环境配置
 ```
