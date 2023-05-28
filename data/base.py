@@ -2,10 +2,14 @@ import bisect
 import numpy as np
 from torch.utils.data import Dataset, ConcatDataset
 import mediapy as media
+from skimage.color import gray2rgb
+from .augmentation import AllAugmentationTransform
 
-import albumentations as A
-from albumentations.pytorch import ToTensorV2
-import random
+# import albumentations as A
+# from albumentations.pytorch import ToTensorV2
+# import random
+
+import einops
 
 # for image dataset
 # import albumentations
@@ -66,7 +70,7 @@ class VideoPaths(Dataset):
     
 
 class HDF5InterfaceDataset(Dataset):
-    def __init__(self, data_dir, frames_per_sample, random_time=True, flip=False, total_videos=-1, start_at=0, labels=None):
+    def __init__(self, data_dir, frames_per_sample, random_time=True, total_videos=-1, start_at=0, augmentation_params=None, labels=None):
         super().__init__()
         if labels is None:
             self.labels = dict() 
@@ -78,20 +82,21 @@ class HDF5InterfaceDataset(Dataset):
         self.start_at = start_at
         self.random_time = random_time
         self.frames_per_sample = frames_per_sample
+        self.transform = AllAugmentationTransform(**augmentation_params)
 
         # The numpy HWC image is converted to pytorch CHW tensor. 
         # If the image is in HW format (grayscale image), 、
         # it will be converted to pytorch HW tensor.
 
-        if flip:
-            flag = random.choice([0,1])
-        else:
-            flag = 0
+        # if flip:
+        #     flag = random.choice([0,1])
+        # else:
+        #     flag = 0
 
-        self.trans = A.Compose([
-            A.HorizontalFlip(p=flag),
-            ToTensorV2()
-        ])
+        # self.trans = A.Compose([
+        #     A.HorizontalFlip(p=flag),
+        #     ToTensorV2()
+        # ])
 
     def __len__(self):
         if self.total_videos > 0:
@@ -122,10 +127,25 @@ class HDF5InterfaceDataset(Dataset):
             if self.random_time and video_len > self.frames_per_sample:
                 time_idx = np.random.choice(video_len - self.frames_per_sample)
             time_idx += self.start_at
+            # print(self.start_at, time_idx, min(time_idx + self.frames_per_sample, video_len))
             for i in range(time_idx, min(time_idx + self.frames_per_sample, video_len)):
-                final_clip.append(self.trans(image=f[str(idx_in_shard)][str(i)][()])["image"])
-        final_clip = torch.stack(final_clip)
-        final_clip = (final_clip/127.5 - 1.0).type(torch.float32)
+                frame = f[str(idx_in_shard)][str(i)][()]
+                if len(frame.shape) == 2 or frame.shape[2] == 1:
+                    final_clip.append(gray2rgb(frame))
+                else:
+                    final_clip.append(frame)
+                # final_clip.append(self.trans(image=f[str(idx_in_shard)][str(i)][()])["image"])
+        
+        # print(np.min(final_clip[0]), np.max(final_clip[0]))
+        final_clip = self.transform(final_clip) # 0,255 -> 0,1
+        # print(np.min(final_clip[0]), np.max(final_clip[0]))
+        final_clip = np.stack(final_clip)
+        # print(final_clip.shape)
+        final_clip = torch.tensor(final_clip)
+        # print(final_clip.shape)
+        final_clip = (final_clip*2 - 1.0).type(torch.float32) # 0,1 -> -1,1
+        # final_clip = (final_clip/127.5 - 1.0).type(torch.float32)
+        final_clip = einops.rearrange(final_clip, "t h w c -> t c h w ")
         video["video"] = final_clip
 
         for k in self.labels:

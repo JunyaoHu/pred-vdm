@@ -445,6 +445,8 @@ class VideoLogger(Callback):
             if is_train:
                 pl_module.eval()
 
+            torch.cuda.empty_cache()
+
             with torch.no_grad():
                 videos, metrics = pl_module.log_videos(
                     batch, 
@@ -473,6 +475,8 @@ class VideoLogger(Callback):
                 pl_module.train()
                 
             rank_zero_info("log video done")
+
+            torch.cuda.empty_cache()
 
     # def check_frequency(self, check_idx):
     #     if (((check_idx % self.batch_frequency) == 0 or (check_idx in self.log_steps)) 
@@ -905,16 +909,22 @@ if __name__ == "__main__":
 # python main.py --base configs/latent-diffusion/kth-ldm-vq-f4.yaml --train
 
 # [for resume from a checkpoint like]
-# CUDA_VISIBLE_DEVICES=0,1 python main.py --resume logs_training/20230220-213917_kth-ldm-vq-f4 --train --gpus 0,1
+# CUDA_VISIBLE_DEVICES=0,1 python main.py --resume /root/autodl-tmp/training_logs/cityscapes128_230526_tcct_para_attn4 --train --gpus 0,1 -f 230526_tcct_para_attn4
 
 # [for test(sampling) like] wait for edit
 
-# CUDA_VISIBLE_DEVICES=0 python main.py --resume /root/autodl-tmp/training_logs/smmnist64_230519_tcct_para1 --gpus 0, -f test
+# CUDA_VISIBLE_DEVICES=0 python main.py --resume /root/autodl-tmp/training_logs/smmnist64_230519_tcct_para1     --gpus 0, -f test
+# CUDA_VISIBLE_DEVICES=1 python main.py --resume /root/autodl-tmp/training_logs/smmnist64_230522_tcct_para_attn --gpus 0, -f test
 
 # CUDA_VISIBLE_DEVICES=0 python main.py --resume /root/autodl-tmp/training_logs/kth64_230516_baseline        --gpus 0, -f test
 # CUDA_VISIBLE_DEVICES=0 python main.py --resume /root/autodl-tmp/training_logs/kth64_230518_ct              --gpus 0, -f test
 # CUDA_VISIBLE_DEVICES=0 python main.py --resume /root/autodl-tmp/training_logs/kth64_230517_tcct_para       --gpus 0, -f test
 # CUDA_VISIBLE_DEVICES=0 python main.py --resume /root/autodl-tmp/training_logs/kth64_230520_tcct_para_attn2 --gpus 0, -f test
+# CUDA_VISIBLE_DEVICES=1 python main.py --resume /root/autodl-tmp/training_logs/kth64_230520_tcct_para_attn2 --gpus 0, -f test
+
+# CUDA_VISIBLE_DEVICES=1 python main.py --resume /root/autodl-tmp/training_logs/cityscapes128_230524_tc          --gpus 0, -f test
+# CUDA_VISIBLE_DEVICES=1 python main.py --resume /root/autodl-tmp/training_logs/cityscapes128_230525_tcct_para   --gpus 0, -f test
+# CUDA_VISIBLE_DEVICES=1 python main.py --resume /root/autodl-tmp/training_logs/cityscapes128_230525_tcct_para3/checkpoints/epoch-000449.ckpt  --gpus 0, -f test
 
 # 主函数main.py
 # 训练和推理进入到./ldm/models/diffusion/ddpm.py

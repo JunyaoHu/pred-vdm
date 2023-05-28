@@ -1119,6 +1119,12 @@ class LatentDiffusion(DDPM):
         loss_eps = self.get_loss(eps_result, z_noise, mean=False).sum([1, 2, 3, 4])
         loss_dict.update({f'{prefix}/loss_eps': loss_eps.mean()})
 
+        # # loss_latent (pixel) ------------------------------------------------
+
+        # z_recon = self.predict_start_from_noise(z_noisy, t=t, noise=eps_result)
+        # loss_eps_pixel = self.get_loss(z_pred, z_recon, mean=False).sum([1, 2, 3, 4])
+        # loss_dict.update({f'{prefix}/loss_eps_pixel': loss_eps_pixel.mean()})
+
         # variational lower bound loss --------------------------------------
         loss_vlb = (self.lvlb_weights[t] * loss_eps).mean()
         loss_dict.update({f'{prefix}/loss_vlb': loss_vlb})
@@ -1133,6 +1139,7 @@ class LatentDiffusion(DDPM):
 
         # loss_sum -------------------------------------------------------
         loss = self.l_eps_weight * loss_eps.mean() + self.original_elbo_weight * loss_vlb
+        # loss = self.l_eps_weight * loss_eps.mean() + self.original_elbo_weight * loss_vlb + 0.1 * (loss_eps_pixel * (1-t/1000)).mean()
         loss_dict.update({f'{prefix}/loss': loss})
 
         return loss, loss_dict
@@ -1871,7 +1878,7 @@ class DiffusionWrapper(pl.LightningModule):
         self.ct_attn = instantiate_from_config(attn_config['ct'])
         self.mode = mode
         self.conditioning_key = conditioning_key
-        assert self.mode in ['tc', 'ct', 'tcct_para', 'tcct_para_attn']
+        assert self.mode in ['tc', 'ct', 'tcct_para', 'tcct_para_attn', 'tc_attn']
         assert self.conditioning_key in [None, 'concat', 'crossattn', 'hybrid', 'adm']
 
     # def __init__(self, diff_model_config, mode, conditioning_key):
@@ -1925,6 +1932,15 @@ class DiffusionWrapper(pl.LightningModule):
                 del x_with_c, in1, in2
 
                 out = (out1 + out2) / 2
+
+            elif self.mode == 'tc_attn':
+                in1 = einops.rearrange(x_with_c, "b t c h w -> b (t c) h w")
+                out1 = self.diffusion_model(in1, t)
+                factor_out1 = self.tc_attn(out1)
+                out1 = factor_out1*out1
+                out1 = einops.rearrange(out1, "b (t c) h w -> b t c h w", c = 3)
+                del x_with_c, in1, factor_out1
+                out = out1
 
             elif self.mode == 'tcct_para_attn':
                 in1 = einops.rearrange(x_with_c, "b t c h w -> b (t c) h w")
