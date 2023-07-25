@@ -1,3 +1,5 @@
+theme: minima
+
 # 基于潜在扩散过程的视频预测模型
 
 ![smmnist-compare-2](https://github.com/JunyaoHu/pred-vdm/assets/67564714/004a8860-3194-4e43-8d86-cce0e29508f6)
